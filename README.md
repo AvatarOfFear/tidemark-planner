@@ -12,6 +12,7 @@ A calendar and project planner that runs in any browser and works on both phone 
   - Link tasks with **Starts after** in the task form. Arrows show the links, and a red dashed arrow flags a task scheduled to start before the task it waits on is finished.
   - Zoom by days, weeks or months. **Fit** frames the chart around the selected project.
   - Keyboard: focus a bar and press ← or → to shift it a day. Hold Shift to change the due date instead.
+  - **Export PDF** (in the Gantt header) downloads the chart as a vector PDF for presentations. Choose a 16:9 slide, A4 or US Letter page, all dates or just what is on screen, and whether to show dependency arrows, the today line, a legend and dates. Long charts continue onto extra pages with the dates repeated. Export works offline in the installed app.
 - Tasks with due dates and project deadlines also appear on the calendar.
 - Light and dark themes follow your system setting.
 - **Offline and installable**: when served over HTTPS it registers a service worker, so you can "Add to Home Screen" on a phone or "Install app" in Chrome/Edge on desktop.
@@ -42,3 +43,7 @@ You can still copy a backup by hand from the same screen.
   ```
 
 - Live site: https://avataroffear.github.io/tidemark-planner/ (published by `.github/workflows/pages.yml` on every push to `main`).
+
+## Third-party
+
+PDF export uses [jsPDF](https://github.com/parallax/jsPDF) 2.5.2 (MIT license, see `vendor/jspdf.LICENSE`), bundled in `vendor/` so it works offline.

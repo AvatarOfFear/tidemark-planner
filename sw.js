@@ -1,6 +1,6 @@
 // Caches the app shell so the planner opens offline. Data lives in localStorage, not here.
-const CACHE = 'tidemark-v3';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+const CACHE = 'tidemark-v4';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './vendor/jspdf.umd.min.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

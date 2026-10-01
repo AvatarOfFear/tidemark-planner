@@ -961,16 +961,30 @@ const tasksOf = pid => db.tasks.filter(t => (pid ? t.projectId === pid : !proj(t
 const ganttScope = () => (ui.ganttProject === 'all' || ui.ganttProject === 'none' || proj(ui.ganttProject) ? ui.ganttProject : 'all');
 const progressOf = t => (t.status === 'done' ? 100 : t.status === 'doing' ? 50 : 0);
 
-function fitGantt() {
-  const sel = ganttScope();
+function ganttBounds(sel) {
   const spans = [];
   db.projects.filter(p => sel === 'all' || p.id === sel).forEach(p => { const sp = projSpan(p); if (sp) spans.push(sp); });
   db.tasks.filter(t => sel === 'all' || (sel === 'none' ? !proj(t.projectId) : t.projectId === sel)).forEach(t => { const sp = taskSpan(t); if (sp) spans.push(sp); });
-  if (!spans.length) { ui.tlStart = ymd(addDays(mondayOf(new Date()), -7)); return; }
-  const min = spans.map(x => x.s).sort()[0], max = spans.map(x => x.e).sort().pop();
-  const len = daysBetween(min, max) + 1;
+  if (!spans.length) return null;
+  return { min: spans.map(x => x.s).sort()[0], max: spans.map(x => x.e).sort().pop() };
+}
+function fitGantt() {
+  const b = ganttBounds(ganttScope());
+  if (!b) { ui.tlStart = ymd(addDays(mondayOf(new Date()), -7)); return; }
+  const len = daysBetween(b.min, b.max) + 1;
   ui.zoom = len <= 28 ? 'day' : len <= 80 ? 'week' : 'month';
-  ui.tlStart = ymd(addDays(mondayOf(parse(min)), ui.zoom === 'month' ? -14 : -7));
+  ui.tlStart = ymd(addDays(mondayOf(parse(b.min)), ui.zoom === 'month' ? -14 : -7));
+}
+function ganttRows(sel) {
+  const rows = [];
+  db.projects.filter(p => sel === 'all' || p.id === sel)
+    .sort((a, b) => (projSpan(a)?.s || '9999').localeCompare(projSpan(b)?.s || '9999'))
+    .forEach(p => { rows.push({ type: 'proj', p }); if (!ui.collapsed.has(p.id)) tasksOf(p.id).forEach(t => rows.push({ type: 'task', t })); });
+  if (sel === 'all' || sel === 'none') {
+    const loose = tasksOf('');
+    if (loose.length) { rows.push({ type: 'group' }); if (!ui.collapsed.has('none')) loose.forEach(t => rows.push({ type: 'task', t })); }
+  }
+  return rows;
 }
 
 function renderGantt() {
@@ -990,15 +1004,7 @@ function renderGantt() {
     else if (d.getDay() === 1 && (ui.zoom === 'week' || i % 28 === 0)) weeks += `<span style="left:${i * dw}px">W${isoWeek(d)}</span>`;
   }
 
-  // rows
-  const rows = [];
-  db.projects.filter(p => sel === 'all' || p.id === sel)
-    .sort((a, b) => (projSpan(a)?.s || '9999').localeCompare(projSpan(b)?.s || '9999'))
-    .forEach(p => { rows.push({ type: 'proj', p }); if (!ui.collapsed.has(p.id)) tasksOf(p.id).forEach(t => rows.push({ type: 'task', t })); });
-  if (sel === 'all' || sel === 'none') {
-    const loose = tasksOf('');
-    if (loose.length) { rows.push({ type: 'group' }); if (!ui.collapsed.has('none')) loose.forEach(t => rows.push({ type: 'task', t })); }
-  }
+  const rows = ganttRows(sel);
 
   const rowIndex = {};
   const html = rows.map((r, i) => {
@@ -1084,6 +1090,7 @@ function renderGantt() {
         <div class="seg" role="group" aria-label="Zoom">${Object.entries(ZOOM).map(([k, v]) => `<button data-act="gt-zoom" data-zoom="${k}" aria-pressed="${ui.zoom === k}">${v.label}</button>`).join('')}</div>
         <span class="navgrp"><button class="btn icon-btn" data-act="tl-prev" aria-label="Earlier">‹</button><button class="btn" data-act="tl-today">Today</button><button class="btn icon-btn" data-act="tl-next" aria-label="Later">›</button></span>
         <button class="btn" data-act="gt-fit">Fit</button>
+        <button class="btn" data-act="gt-pdf" ${rows.length ? '' : 'disabled'}>Export PDF</button>
         <button class="btn primary" data-act="new-task" ${proj(sel) ? `data-project="${sel}"` : ''}>+ Task</button>
       </div></header>
     ${body}
@@ -1119,6 +1126,276 @@ function refocusBar(kind, id) { main.querySelector(`.gt [data-kind="${kind}"][da
 function rangeText(kind, id) {
   const sp = kind === 'task' ? taskSpan(db.tasks.find(o => o.id === id)) : projSpan(proj(id));
   return sp ? (sp.s === sp.e ? shortDate(sp.s) : `${shortDate(sp.s)} → ${shortDate(sp.e)}`) : '';
+}
+
+/* ---------- gantt PDF export ---------- */
+const PDF_PAGES = {
+  slide: { w: 960, h: 540, label: 'Slide 16:9 (PowerPoint, Keynote, Google Slides)' },
+  a4: { w: 842, h: 595, label: 'A4 landscape' },
+  letter: { w: 792, h: 612, label: 'US Letter landscape' },
+};
+const PDFKEY = 'tidemark.pdf';
+const pdfPrefs = () => { try { return JSON.parse(localStorage.getItem(PDFKEY)) || {}; } catch (e) { return {}; } };
+let jspdfLoading = null;
+function loadJsPDF() {
+  if (window.jspdf) return Promise.resolve(window.jspdf);
+  if (!jspdfLoading) {
+    jspdfLoading = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = 'vendor/jspdf.umd.min.js';
+      sc.onload = () => resolve(window.jspdf);
+      sc.onerror = () => { jspdfLoading = null; sc.remove(); reject(new Error('load')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return jspdfLoading;
+}
+function pdfDialog() {
+  if (!canSync) { toast(`PDF export works in the app at ${SITE.replace('https://', '')}`); return; }
+  const sel = ganttScope(), b = ganttBounds(sel), pr = pdfPrefs();
+  const title = sel === 'all' ? 'Project timeline' : sel === 'none' ? 'Tasks without a project' : proj(sel).name;
+  const vs = ui.tlStart, ve = ymd(addDays(parse(ui.tlStart), (ZOOM[ui.zoom] || ZOOM.week).days - 1));
+  const chk = (name, label, def = true) => `<label class="dep"><input type="checkbox" id="p-${name}" name="${name}" ${(pr[name] ?? def) ? 'checked' : ''}><span>${label}</span></label>`;
+  openModal(`<h2>Export Gantt chart as PDF</h2>
+  <form class="f" data-kind="pdf">
+    <label>Title<input id="p-title" name="title" maxlength="120" value="${esc(title)}"></label>
+    <label>Subtitle (optional)<input id="p-subtitle" name="subtitle" maxlength="160" placeholder="e.g. Status update for the steering group"></label>
+    <div class="two">
+      <label>Page<select id="p-page" name="page">${Object.entries(PDF_PAGES).map(([k, v]) => `<option value="${k}" ${(pr.page || 'slide') === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></label>
+      <label>Dates<select id="p-range" name="range">${b ? `<option value="fit">All dates (${shortDate(b.min)} – ${shortDate(b.max)})</option>` : ''}<option value="view">As on screen (${shortDate(vs)} – ${shortDate(ve)})</option></select></label>
+    </div>
+    <div class="deps" style="max-height:none">${chk('arrows', 'Dependency arrows')}${chk('today', 'Today line')}${chk('legend', 'Legend')}${chk('dates', 'Start and due dates next to tasks', false)}</div>
+    <p class="hint">The PDF matches what the chart shows: collapsed projects appear as a single bar. Long charts continue on extra pages with the dates repeated.</p>
+    <div class="actions"><span class="grow"></span><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit" id="p-go">Download PDF</button></div>
+  </form>`);
+}
+
+const PC = { fg: [19, 36, 38], muted: [96, 112, 114], line: [221, 230, 230], soft: [241, 245, 245], wkend: [246, 249, 249], danger: [190, 58, 34], white: [255, 255, 255] };
+const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const tint = (h, t) => hexRgb(h).map(c => Math.round(c + (255 - c) * t));
+const shade = (h, t) => hexRgb(h).map(c => Math.round(c * (1 - t)));
+function pdfText(v) {
+  return String(v ?? '').normalize('NFC')
+    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/…/g, '...').replace(/→/g, '->')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
+}
+function pdfFit(doc, v, max) {
+  let t = pdfText(v);
+  if (doc.getTextWidth(t) <= max) return t;
+  while (t.length > 1 && doc.getTextWidth(t + '...') > max) t = t.slice(0, -1);
+  return t.trimEnd() + '...';
+}
+
+async function exportGanttPdf(o) {
+  let lib;
+  try { lib = await loadJsPDF(); } catch (e) { toast('Could not load the PDF tool. Check your connection and try again.'); return false; }
+  const { jsPDF } = lib;
+  const sel = ganttScope(), rows = ganttRows(sel), b = ganttBounds(sel);
+  let s, e;
+  if (o.range === 'fit' && b) { s = ymd(addDays(parse(b.min), -2)); e = ymd(addDays(parse(b.max), 3)); }
+  else { s = ui.tlStart; e = ymd(addDays(parse(ui.tlStart), (ZOOM[ui.zoom] || ZOOM.week).days - 1)); }
+  const DAYS = daysBetween(s, e) + 1;
+  const pg = PDF_PAGES[o.page] || PDF_PAGES.slide, W = pg.w, H = pg.h, M = 30;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [W, H], compress: true });
+  doc.setProperties({ title: pdfText(o.title || 'Gantt chart'), creator: 'Tidemark Planner' });
+
+  // layout
+  const titleY = M + 14, subY = titleY + 17, metaY = (o.subtitle ? subY : titleY) + 15;
+  const top = metaY + 14, scaleH = 30, chartTop = top + scaleH;
+  const legendH = o.legend ? 22 : 0, footY = H - M + 12;
+  const avail = H - M - legendH - chartTop;
+  const labW = Math.min(240, Math.round((W - 2 * M) * 0.27));
+  const x0 = M + labW, tlW = W - M - x0, dw = tlW / DAYS;
+  const X = ds => x0 + daysBetween(s, ds) * dw;
+  let rowH, perPage;
+  if (rows.length * 16 <= avail) { rowH = Math.min(26, avail / Math.max(rows.length, 1)); perPage = rows.length; }
+  else { rowH = 19; perPage = Math.max(1, Math.floor(avail / rowH)); }
+  const pages = Math.max(1, Math.ceil(rows.length / perPage));
+  const fs = Math.max(7, Math.min(10, rowH * 0.42));
+  const t0 = todayStr();
+
+  // header numbers
+  const taskRows = rows.filter(r => r.type === 'task').map(r => r.t);
+  const allTasks = db.tasks.filter(t => sel === 'all' || (sel === 'none' ? !proj(t.projectId) : t.projectId === sel));
+  const doneN = allTasks.filter(t => t.status === 'done').length;
+  const lateN = allTasks.filter(isLate).length;
+  const meta = [`${shortDate(s)} - ${fmt(parse(e), { day: 'numeric', month: 'short', year: 'numeric' })}`, `${allTasks.length} task${allTasks.length === 1 ? '' : 's'}`,
+    `${allTasks.length ? Math.round(doneN / allTasks.length * 100) : 0}% complete`, lateN ? `${lateN} overdue` : ''].filter(Boolean).join('   ·   ');
+
+  const spanOf = r => (r.type === 'proj' ? projSpan(r.p) : r.type === 'task' ? taskSpan(r.t) : null);
+  const clampX = (a, bEnd) => [Math.max(x0, a), Math.min(x0 + tlW, bEnd)];
+
+  for (let pi = 0; pi < pages; pi++) {
+    if (pi) doc.addPage([W, H], 'landscape');
+    const slice = rows.slice(pi * perPage, (pi + 1) * perPage);
+    const chartBottom = chartTop + slice.length * rowH;
+
+    // title block
+    doc.setTextColor(...PC.fg); doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+    doc.text(pdfFit(doc, o.title || 'Gantt chart', W - 2 * M - 150), M, titleY);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...PC.muted);
+    doc.text(pdfText(`As of ${fmt(new Date(), { day: 'numeric', month: 'long', year: 'numeric' })}`), W - M, titleY, { align: 'right' });
+    if (o.subtitle) { doc.setFontSize(11); doc.setTextColor(...PC.fg); doc.text(pdfFit(doc, o.subtitle, W - 2 * M), M, subY); }
+    doc.setFontSize(9); doc.setTextColor(...PC.muted); doc.text(pdfText(meta), M, metaY);
+
+    // scale background + body backgrounds
+    doc.setFillColor(...PC.soft); doc.rect(M, top, W - 2 * M, scaleH, 'F');
+    if (dw >= 2.5) {
+      doc.setFillColor(...PC.wkend);
+      for (let i = 0; i < DAYS; i++) { const d = addDays(parse(s), i); if (d.getDay() === 6) doc.rect(x0 + i * dw, chartTop, Math.min(2, DAYS - i) * dw, chartBottom - chartTop, 'F'); }
+    }
+    slice.forEach((r, i) => { if (r.type !== 'task') { doc.setFillColor(...PC.soft); doc.rect(M, chartTop + i * rowH, W - 2 * M, rowH, 'F'); } });
+
+    // grid: weeks and months
+    for (let i = 0; i <= DAYS; i++) {
+      const d = addDays(parse(s), i), x = x0 + i * dw;
+      if (d.getDate() === 1 || i === 0) { doc.setDrawColor(...PC.muted); doc.setLineWidth(0.6); doc.line(x, top, x, chartBottom); }
+      else if (d.getDay() === 1 && dw * 7 >= 6) { doc.setDrawColor(...PC.line); doc.setLineWidth(0.5); doc.line(x, top + 15, x, chartBottom); }
+    }
+    // scale labels
+    doc.setFontSize(8.5); doc.setTextColor(...PC.fg); doc.setFont('helvetica', 'bold');
+    for (let i = 0; i < DAYS; i++) {
+      const d = addDays(parse(s), i);
+      if (i !== 0 && d.getDate() !== 1) continue;
+      const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      const room = Math.min(dim - d.getDate() + 1, DAYS - i) * dw - 6;
+      const full = fmt(d, { month: 'long', year: 'numeric' }), short = fmt(d, { month: 'short' });
+      const label = doc.getTextWidth(pdfText(full)) <= room ? full : doc.getTextWidth(pdfText(short)) <= room ? short : '';
+      if (label) doc.text(pdfText(label), x0 + i * dw + 3, top + 11);
+    }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    for (let i = 0; i < DAYS; i++) {
+      const d = addDays(parse(s), i), x = x0 + i * dw;
+      if (dw >= 11) { doc.setTextColor(...(d.getDay() % 6 === 0 ? PC.muted : PC.fg)); doc.text(String(d.getDate()), x + dw / 2, top + 25, { align: 'center' }); }
+      else if (d.getDay() === 1 && dw * 7 >= 22) { doc.setTextColor(...PC.muted); doc.text(`W${isoWeek(d)}`, x + 3, top + 25); }
+    }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...PC.muted);
+    doc.text(sel === 'all' ? 'PROJECT / TASK' : 'TASK', M + 6, top + 25);
+    if (pages > 1) { doc.setFont('helvetica', 'normal'); doc.text(`Rows ${pi * perPage + 1}-${pi * perPage + slice.length} of ${rows.length}`, x0 - 6, top + 25, { align: 'right' }); }
+
+    // row separators, label column border, outer frame
+    doc.setDrawColor(...PC.line); doc.setLineWidth(0.5);
+    slice.forEach((r, i) => doc.line(M, chartTop + (i + 1) * rowH, W - M, chartTop + (i + 1) * rowH));
+    doc.setDrawColor(...PC.muted); doc.setLineWidth(0.6);
+    doc.line(x0, top, x0, chartBottom); doc.line(M, chartTop, W - M, chartTop);
+    doc.setDrawColor(...PC.line); doc.rect(M, top, W - 2 * M, chartBottom - top, 'S');
+
+    // rows
+    const rowY = {};
+    slice.forEach((r, i) => {
+      const y = chartTop + i * rowH, cy = y + rowH / 2;
+      if (r.type === 'task') rowY[r.t.id] = cy;
+      if (r.type === 'proj') {
+        const p = r.p, st = projStats(p), sp = projSpan(p);
+        doc.setFillColor(...hexRgb(p.color)); doc.circle(M + 9, cy, 3.2, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(fs + 0.5); doc.setTextColor(...PC.fg);
+        const pctTxt = `${st.pct}%`;
+        doc.text(pdfFit(doc, p.name + (ui.collapsed.has(p.id) ? ` (${st.total} tasks)` : ''), labW - 52), M + 17, cy, { baseline: 'middle' });
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(fs - 0.5); doc.setTextColor(...PC.muted);
+        doc.text(pctTxt, x0 - 6, cy, { align: 'right', baseline: 'middle' });
+        if (sp) {
+          const a = X(sp.s), z = X(sp.e) + dw, [c1, c2] = clampX(a, z), h = Math.max(4, rowH * 0.3);
+          if (c2 > c1) {
+            doc.setFillColor(...(sp.derived ? tint(p.color, 0.45) : hexRgb(p.color))); doc.rect(c1, cy - h / 2, c2 - c1, h, 'F');
+            const pz = Math.min(c2, a + (z - a) * st.pct / 100);
+            if (pz > c1) { doc.setFillColor(...shade(p.color, 0.35)); doc.rect(c1, cy - h / 2, pz - c1, h, 'F'); }
+          }
+        }
+      } else if (r.type === 'group') {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(fs + 0.5); doc.setTextColor(...PC.muted);
+        doc.text('No project', M + 8, cy, { baseline: 'middle' });
+      } else {
+        const t = r.t, sp = taskSpan(t), done = t.status === 'done', late = isLate(t), col = proj(t.projectId)?.color || '#7a8b8c';
+        const indent = sel === 'all' || sel === 'none' ? 17 : 8;
+        doc.setDrawColor(...hexRgb(col)); doc.setLineWidth(0.8);
+        doc.setFillColor(...(done ? hexRgb(col) : PC.white)); doc.rect(M + indent, cy - 3.5, 7, 7, 'FD');
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(fs); doc.setTextColor(...(done ? PC.muted : late ? PC.danger : PC.fg));
+        doc.text(pdfFit(doc, t.title, labW - indent - 16), M + indent + 11, cy, { baseline: 'middle' });
+        if (!sp) return;
+        if (sp.ms) {
+          const cx = X(sp.s) + dw / 2, hh = Math.min(rowH * 0.3, 6);
+          if (cx < x0 || cx > x0 + tlW) return;
+          doc.setLineWidth(0.9); doc.setDrawColor(...(late ? PC.danger : hexRgb(col))); doc.setFillColor(...(done ? hexRgb(col) : late ? tint('#be3a22', 0.75) : PC.white));
+          doc.lines([[hh, hh], [-hh, hh], [-hh, -hh]], cx, cy - hh, [1, 1], 'FD', true);
+          doc.setFontSize(6.5); doc.setTextColor(...PC.muted);
+          if (cx + hh + 40 < x0 + tlW) doc.text(pdfText(shortDate(sp.s)), cx + hh + 3, cy, { baseline: 'middle' });
+        } else {
+          const a = X(sp.s), z = X(sp.e) + dw, [c1, c2] = clampX(a, z), h = Math.max(6, rowH * 0.56);
+          if (c2 <= c1) return;
+          doc.setLineWidth(0.6); doc.setDrawColor(...(late ? PC.danger : hexRgb(col))); doc.setFillColor(...tint(col, 0.78));
+          doc.roundedRect(c1, cy - h / 2, c2 - c1, h, 2, 2, 'FD');
+          const pz = Math.min(c2, a + (z - a) * progressOf(t) / 100);
+          if (pz > c1 + 1) { doc.setFillColor(...tint(col, 0.35)); doc.roundedRect(c1 + 0.3, cy - h / 2 + 0.3, pz - c1 - 0.6, h - 0.6, 1.8, 1.8, 'F'); }
+          const n = daysBetween(sp.s, sp.e) + 1;
+          doc.setFontSize(6.5); doc.setTextColor(...PC.fg);
+          if (c2 - c1 > 20) doc.text(`${n}d`, c1 + 4, cy, { baseline: 'middle' });
+          if (o.dates) {
+            doc.setTextColor(...PC.muted);
+            const lbl = pdfText(`${shortDate(sp.s)} - ${shortDate(sp.e)}`);
+            if (c2 + 4 + doc.getTextWidth(lbl) < x0 + tlW) doc.text(lbl, c2 + 4, cy, { baseline: 'middle' });
+          }
+        }
+      }
+    });
+
+    // dependency arrows (both ends on this page and in range)
+    if (o.arrows) {
+      slice.forEach(r => {
+        if (r.type !== 'task') return;
+        const t = r.t, sp = taskSpan(t); if (!sp) return;
+        (t.deps || []).forEach(did => {
+          if (!(did in rowY)) return;
+          const dt = db.tasks.find(x => x.id === did), dsp = dt && taskSpan(dt); if (!dsp) return;
+          const hh = Math.min(rowH * 0.3, 6);
+          const x1 = dsp.ms ? X(dsp.e) + dw / 2 + hh : X(dsp.e) + dw, y1 = rowY[did];
+          const x2 = sp.ms ? X(sp.s) + dw / 2 - hh : X(sp.s), y2 = rowY[t.id];
+          if (x1 < x0 || x1 > x0 + tlW || x2 < x0 || x2 > x0 + tlW) return;
+          const bad = sp.ms ? sp.s < dsp.e : sp.s <= dsp.e;
+          doc.setLineWidth(0.6); doc.setDrawColor(...(bad ? PC.danger : PC.muted)); doc.setFillColor(...(bad ? PC.danger : PC.muted));
+          doc.setLineDashPattern(bad ? [2, 1.5] : [], 0);
+          const g = 5, mid = y2 + (y2 > y1 ? -rowH / 2 : rowH / 2);
+          const pts = x2 - g >= x1 + g ? [[x1, y1], [x1 + g, y1], [x1 + g, y2], [x2 - 3, y2]] : [[x1, y1], [x1 + g, y1], [x1 + g, mid], [x2 - g, mid], [x2 - g, y2], [x2 - 3, y2]];
+          for (let k = 1; k < pts.length; k++) doc.line(pts[k - 1][0], pts[k - 1][1], pts[k][0], pts[k][1]);
+          doc.setLineDashPattern([], 0);
+          doc.triangle(x2, y2, x2 - 4, y2 - 2.3, x2 - 4, y2 + 2.3, 'F');
+        });
+      });
+    }
+
+    // today line
+    if (o.today && t0 >= s && t0 <= e) {
+      const x = X(t0) + dw / 2;
+      doc.setDrawColor(...PC.danger); doc.setLineWidth(0.9); doc.line(x, top + 15, x, chartBottom);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); const tw = doc.getTextWidth('TODAY') + 4;
+      doc.setFillColor(...PC.danger); doc.rect(x - tw / 2, top + 15, tw, 8, 'F');
+      doc.setTextColor(...PC.white); doc.text('TODAY', x, top + 21, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+    }
+
+    // legend
+    if (o.legend) {
+      let lx = M; const ly = Math.min(H - M - 6, chartBottom + 18);
+      doc.setFontSize(7.5); doc.setTextColor(...PC.muted); doc.setLineWidth(0.6);
+      const item = (draw, label) => { draw(lx, ly); lx += 22; doc.text(label, lx, ly, { baseline: 'middle' }); lx += doc.getTextWidth(label) + 16; };
+      item((x, y) => { doc.setDrawColor(...PC.muted); doc.setFillColor(...tint('#607072', 0.78)); doc.roundedRect(x, y - 4, 16, 8, 1.5, 1.5, 'FD'); doc.setFillColor(...tint('#607072', 0.35)); doc.rect(x + 0.4, y - 3.6, 7, 7.2, 'F'); }, 'Task (dark part = progress)');
+      item((x, y) => { doc.setDrawColor(...PC.muted); doc.setFillColor(...PC.white); doc.lines([[4, 4], [-4, 4], [-4, -4]], x + 8, y - 4, [1, 1], 'FD', true); }, 'Milestone');
+      item((x, y) => { doc.setDrawColor(...PC.muted); doc.setFillColor(...PC.white); doc.rect(x + 4, y - 3.5, 7, 7, 'FD'); }, 'Status (filled = done)');
+      if (o.arrows) {
+        item((x, y) => { doc.setDrawColor(...PC.muted); doc.line(x, y, x + 13, y); doc.setFillColor(...PC.muted); doc.triangle(x + 16, y, x + 12, y - 2.3, x + 12, y + 2.3, 'F'); }, 'Starts after');
+        item((x, y) => { doc.setDrawColor(...PC.danger); doc.setLineDashPattern([2, 1.5], 0); doc.line(x, y, x + 13, y); doc.setLineDashPattern([], 0); doc.setFillColor(...PC.danger); doc.triangle(x + 16, y, x + 12, y - 2.3, x + 12, y + 2.3, 'F'); }, 'Scheduling conflict');
+      }
+      item((x, y) => { doc.setDrawColor(...PC.danger); doc.roundedRect(x + 1, y - 3, 14, 6, 1.5, 1.5, 'S'); }, 'Overdue');
+    }
+
+    // footer
+    doc.setFontSize(7); doc.setTextColor(...PC.muted); doc.setFont('helvetica', 'normal');
+    doc.text('Tidemark Planner', M, footY);
+    doc.text(`Page ${pi + 1} of ${pages}`, W - M, footY, { align: 'right' });
+  }
+
+  const slug = pdfText(o.title || 'gantt').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'gantt';
+  doc.save(`${slug}-gantt-${todayStr()}.pdf`);
+  return true;
 }
 
 /* ---------- forms ---------- */
@@ -1205,6 +1482,15 @@ function newProject() {
 }
 
 function onSubmit(form) {
+  if (form.dataset.kind === 'pdf') {
+    const f = new FormData(form), o = { title: (f.get('title') || '').trim(), subtitle: (f.get('subtitle') || '').trim(), page: f.get('page'), range: f.get('range'),
+      arrows: f.has('arrows'), today: f.has('today'), legend: f.has('legend'), dates: f.has('dates') };
+    try { localStorage.setItem(PDFKEY, JSON.stringify({ page: o.page, arrows: o.arrows, today: o.today, legend: o.legend, dates: o.dates })); } catch (e) {}
+    const btn = $('#p-go'); if (btn) { btn.disabled = true; btn.textContent = 'Creating PDF…'; }
+    exportGanttPdf(o).then(ok => { if (ok) { closeModal(); toast('PDF downloaded'); } else if (btn) { btn.disabled = false; btn.textContent = 'Download PDF'; } })
+      .catch(() => { toast('Something went wrong creating the PDF. Please try again.'); if (btn) { btn.disabled = false; btn.textContent = 'Download PDF'; } });
+    return;
+  }
   const raw = new FormData(form), fd = Object.fromEntries(raw);
   const kind = form.dataset.kind, id = form.dataset.id;
   for (const k in fd) if (typeof fd[k] === 'string') fd[k] = fd[k].trim();
@@ -1306,6 +1592,7 @@ document.addEventListener('click', ev => {
     }
     case 'tl-today': ui.gtScroll = 'today'; ui.tlStart = ymd(addDays(mondayOf(new Date()), ui.zoom === 'month' ? -28 : -7)); render(); break;
     case 'gt-zoom': ui.zoom = el.dataset.zoom; ui.gtScroll = 'today'; saveUI(); render(); break;
+    case 'gt-pdf': pdfDialog(); break;
     case 'gt-fit': fitGantt(); ui.gtScroll = 'start'; saveUI(); render(); break;
     case 'gt-toggle': if (ui.collapsed.has(id)) ui.collapsed.delete(id); else ui.collapsed.add(id); render(); break;
     case 'open-gantt': ui.view = 'timeline'; ui.ganttProject = id; fitGantt(); ui.gtScroll = 'start'; saveUI(); render(); window.scrollTo(0, 0); break;
