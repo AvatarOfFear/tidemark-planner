@@ -27,7 +27,7 @@ jobs:
           sparse-checkout: reminders
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install web-push
         working-directory: reminders
         run: npm install --no-save --no-audit --no-fund web-push@3.6.7
