@@ -1,0 +1,13 @@
+{
+  "name": "Tidemark Planner",
+  "short_name": "Tidemark",
+  "description": "Calendar and project planner that works offline on phone and desktop.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7f7",
+  "theme_color": "#0e6b66",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
