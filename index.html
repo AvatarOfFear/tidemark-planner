@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Tidemark">
 <!--APP-HEAD-->
 <title>Tidemark Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -420,7 +421,7 @@ form.f { display: grid; gap: 12px; }
     <div class="summary" id="summary"></div>
     <div class="spacer"></div>
     <button class="syncstat" data-act="data"></button>
-    <button class="btn ghost block" data-act="data">Sync &amp; backup</button>
+    <button class="btn ghost block" data-act="data">Settings</button>
   </aside>
   <div>
     <div class="mtop">
@@ -547,7 +548,7 @@ function normalize(raw) {
     })),
     events: (Array.isArray(s.events) ? s.events : []).filter(e => e && e.title && isValidDate(e.date)).map(e => ({
       id: str(e.id) || uid(), title: str(e.title), date: e.date, endDate: date(e.endDate),
-      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes), updated: num(e.updated),
+      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes), remind: typeof e.remind === 'number' ? e.remind : null, updated: num(e.updated),
     })),
   };
 }
@@ -732,6 +733,140 @@ function syncSection() {
     <p class="hint" style="margin:0">The token is stored only in this browser and can only read and write your gists. A secret gist does not appear on your profile or in search, but anyone who has its exact link could read it.</p></section>`;
 }
 
+/* ---------- notifications (Web Push, sent by the reminders GitHub Action) ---------- */
+const PUSH_FILE = 'tidemark-push.json', NOTIFKEY = 'tidemark.notif';
+const SECRETS_URL = 'https://github.com/AvatarOfFear/tidemark-planner/settings/secrets/actions/new';
+const NOTIF_DEFAULTS = { eventDefault: 15, taskTime: '09:00', digest: false, digestTime: '08:00' };
+const REMIND_CHOICES = [[-1, 'No reminder'], [0, 'At start time'], [5, '5 minutes before'], [10, '10 minutes before'], [15, '15 minutes before'], [30, '30 minutes before'], [60, '1 hour before'], [120, '2 hours before'], [1440, '1 day before']];
+let notif = (() => { try { return JSON.parse(localStorage.getItem(NOTIFKEY)) || {}; } catch (e) { return {}; } })();
+const persistNotif = () => { try { localStorage.setItem(NOTIFKEY, JSON.stringify(notif)); } catch (e) {} };
+const deviceId = (() => { try { let id = localStorage.getItem('tidemark.device'); if (!id) { id = uid() + uid(); localStorage.setItem('tidemark.device', id); } return id; } catch (e) { return 'device-' + uid(); } })();
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = str => Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((str.length + 3) % 4)), c => c.charCodeAt(0));
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const remindLabel = m => (REMIND_CHOICES.find(c => c[0] === m) || [0, `${m} minutes before`])[1];
+function remindOptions(val) {
+  const def = (notif.settings || NOTIF_DEFAULTS).eventDefault;
+  return `<option value="" ${val === null || val === undefined ? 'selected' : ''}>Default (${remindLabel(def).toLowerCase()})</option>`
+    + REMIND_CHOICES.map(([m, l]) => `<option value="${m}" ${val === m ? 'selected' : ''}>${l}</option>`).join('');
+}
+function deviceLabel() {
+  const ua = navigator.userAgent;
+  return /iPhone/.test(ua) ? 'iPhone' : isIOS ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : 'Browser';
+}
+async function readPush() {
+  if (!sync.gistId) await syncNow();
+  if (!sync.gistId) throw new Error('Sync is not connected, so notifications cannot be set up.');
+  const g = await gh('GET', `/gists/${sync.gistId}`);
+  const f = g.files && g.files[PUSH_FILE];
+  let p = {};
+  if (f) { const text = f.truncated ? await (await fetch(f.raw_url, { cache: 'no-store' })).text() : f.content; try { p = JSON.parse(text) || {}; } catch (e) {} }
+  p.devices = p.devices || {};
+  p.settings = { ...NOTIF_DEFAULTS, ...(p.settings || {}) };
+  Object.assign(notif, { settings: p.settings, lastRun: p.lastRun || 0, lastError: p.lastError || null, enabled: !!p.devices[deviceId], devices: Object.values(p.devices).map(d => d.label || 'Device') });
+  persistNotif();
+  return p;
+}
+const writePush = p => gh('PATCH', `/gists/${sync.gistId}`, { files: { [PUSH_FILE]: { content: JSON.stringify(p, null, 1) } } });
+async function makeVapid() {
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const raw = await crypto.subtle.exportKey('raw', kp.publicKey), jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+  return { publicKey: b64u(raw), privateKey: jwk.d };
+}
+async function subscribeDevice(p, { test }) {
+  const reg = await navigator.serviceWorker.ready;
+  if (!p.vapid) p.vapid = await makeVapid();
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && sub.options && sub.options.applicationServerKey && b64u(sub.options.applicationServerKey) !== p.vapid.publicKey) { await sub.unsubscribe(); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: unb64u(p.vapid.publicKey) });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  p.devices[deviceId] = { subscription: sub.toJSON(), tz, label: deviceLabel(), added: p.devices[deviceId]?.added || Date.now() };
+  p.settings.tz = tz;
+  if (test) p.testRequested = Date.now();
+  await writePush(p);
+  Object.assign(notif, { enabled: true, endpoint: sub.endpoint, devices: Object.values(p.devices).map(d => d.label || 'Device') });
+  persistNotif();
+  return reg;
+}
+async function enableNotifications() {
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked for Tidemark. Allow them in your phone or browser settings, then try again.' : 'Notifications were not allowed.');
+  const p = await readPush();
+  const reg = await subscribeDevice(p, { test: true });
+  try { await reg.showNotification('Notifications are on', { body: 'Tidemark will remind you about events, due tasks and deadlines.', icon: 'icons/icon-192.png', badge: 'icons/badge-96.png', tag: 'tidemark-enabled' }); } catch (e) {}
+}
+async function disableNotifications() {
+  const p = await readPush();
+  delete p.devices[deviceId];
+  await writePush(p);
+  try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch (e) {}
+  Object.assign(notif, { enabled: false, endpoint: '', devices: Object.values(p.devices).map(d => d.label || 'Device') });
+  persistNotif();
+}
+// Browsers occasionally replace a push subscription; quietly re-register it when that happens.
+async function checkSubscription() {
+  if (!notif.enabled || !sync.token || !pushSupported() || Notification.permission !== 'granted') return;
+  try {
+    const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if (sub && sub.endpoint === notif.endpoint) return;
+    const p = await readPush();
+    if (p.devices[deviceId] || !sub) await subscribeDevice(p, { test: false });
+  } catch (e) { /* try again next launch */ }
+}
+const timeOptions = (val, extra = '') => extra + Array.from({ length: 17 }, (_, i) => `${pad(i + 5)}:00`).map(t => `<option value="${t}" ${val === t ? 'selected' : ''}>${t}</option>`).join('');
+function serviceStatus() {
+  const run = notif.lastRun || 0, setup = `<ol>
+      <li>Open <a href="${SECRETS_URL}" target="_blank" rel="noopener">your repo's Actions secrets</a> on GitHub.</li>
+      <li>Name: <b>GIST_TOKEN</b>. Secret: your sync token (the one you pasted above), or a new token with only the gist box ticked.</li>
+      <li>Tap <b>Add secret</b>. Reminders start within about 10 minutes.</li></ol>`;
+  if (notif.lastError) return `<p class="late">The reminder service hit a problem ${esc(ago(notif.lastError.at))}: ${esc(notif.lastError.message)}</p>`;
+  if (!run) return `<p>Waiting for the reminder service. If the test reminder has not arrived within 15 minutes, finish the one-time setup:</p>${setup}`;
+  if (Date.now() - run > 3 * 3600e3) return `<p class="late">The reminder service last ran ${esc(ago(run))}. Check that the GIST_TOKEN secret is still valid:</p>${setup}`;
+  return `<p class="muted">Reminder service is running (last check ${esc(ago(run))}). On this planner: ${esc((notif.devices || []).join(', ') || 'no devices')}.</p>`;
+}
+function notifInner() {
+  const head = '<div class="eyebrow">Notifications</div>';
+  if (!canSync) return `${head}<p class="muted">Notifications work in the installed app at <a href="${SITE}" target="_blank" rel="noopener">${SITE.replace('https://', '')}</a>, not in this preview.</p>`;
+  if (!pushSupported()) {
+    if (isIOS && !isStandalone()) return `${head}<p>On iPhone and iPad, notifications only work in the Home Screen app. In Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>. Then open Tidemark from your Home Screen and come back to Settings.</p>`;
+    return `${head}<p class="muted">This browser cannot show notifications from web apps. Use Chrome, Edge or Firefox, or Safari on iOS 16.4 or later.</p>`;
+  }
+  if (!sync.token) return `${head}<p>Turn on sync above first. Reminders are sent from your synced planner, which is how they reach you even when Tidemark is closed.</p>`;
+  if (Notification.permission === 'denied') return `${head}<p class="late">Notifications are blocked for Tidemark on this device.</p>
+    <p class="muted">iPhone: Settings → Notifications → Tidemark → Allow Notifications. Android: long-press the Tidemark icon → App info → Notifications. Computer: click the icon next to the address bar and allow notifications. Then come back here.</p>`;
+  if (!notif.enabled) return `${head}<p>Get reminders on this device before events, on the morning tasks and project deadlines are due, and an optional morning summary. They arrive even when Tidemark is closed.</p>
+    <div class="actions"><button class="btn primary" data-act="notif-on">Turn on notifications</button></div>`;
+  const st = { ...NOTIF_DEFAULTS, ...(notif.settings || {}) };
+  return `${head}<p><b>On for this device.</b></p>${serviceStatus()}
+    <form class="f" data-kind="notif">
+      <div class="two">
+        <label>Event reminders<select id="n-event" name="eventDefault">${REMIND_CHOICES.map(([m, l]) => `<option value="${m}" ${st.eventDefault === m ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label>Due tasks and deadlines<select id="n-task" name="taskTime">${timeOptions(st.taskTime, `<option value="off" ${st.taskTime === 'off' ? 'selected' : ''}>Off</option>`)}</select></label>
+      </div>
+      <div class="two">
+        <label class="dep" style="align-self:end"><input type="checkbox" id="n-digest" name="digest" ${st.digest ? 'checked' : ''}><span>Morning summary of the day</span></label>
+        <label>Summary time<select id="n-digest-time" name="digestTime">${timeOptions(st.digestTime)}</select></label>
+      </div>
+      <p class="hint" style="margin:0">Each event can override the reminder time in its own settings. Reminders usually arrive on time but can be a few minutes late, because GitHub runs the reminder service on a schedule.</p>
+      <div class="actions"><button class="btn primary" type="submit">Save</button><button type="button" class="btn" data-act="notif-test">Send test</button><span class="grow"></span><button type="button" class="btn danger" data-act="notif-off">Turn off on this device</button></div>
+    </form>`;
+}
+async function refreshNotif() {
+  const box = document.getElementById('notif-box');
+  if (!box || !canSync || !sync.token || !pushSupported()) return;
+  try { await readPush(); } catch (e) { /* show cached state */ }
+  const again = document.getElementById('notif-box');
+  if (again && !again.contains(document.activeElement)) again.innerHTML = notifInner();
+}
+async function notifAction(btn, label, fn, done) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = label;
+  try { await fn(); if (done) toast(done); } catch (e) { toast(e.message || 'Something went wrong. Please try again.'); }
+  const box = document.getElementById('notif-box'); if (box) box.innerHTML = notifInner();
+  if (btn.isConnected) { btn.disabled = false; btn.textContent = old; }
+}
+
 /* ---------- rendering ---------- */
 const main = $('#main');
 function render() {
@@ -739,7 +874,7 @@ function render() {
     `<button data-act="view" data-view="${k}" ${ui.view === k ? 'aria-current="page"' : ''}>${ICONS[k]}${n}</button>`).join('');
   $('#tabbar').innerHTML = VIEWS.map(([k, n]) =>
     `<button data-act="view" data-view="${k}" ${ui.view === k ? 'aria-current="page"' : ''}>${ICONS[k]}${n}</button>`).join('')
-    + `<button data-act="data">${ICONS.data}Data</button>`;
+    + `<button data-act="data">${ICONS.data}Settings</button>`;
   renderSummary();
   const banner = db.sample ? `<div class="banner"><span>These projects, tasks and events are examples so you can see how things work.</span>
     <button class="btn sm" data-act="keep-sample">Keep them</button><button class="btn sm primary" data-act="clear-all">Clear examples and start fresh</button></div>` : '';
@@ -1427,6 +1562,7 @@ function eventForm(e) {
     <div class="two"><label>Start time<input id="f-start" type="time" name="start" value="${esc(e.start)}"></label>
       <label>End time<input id="f-end" type="time" name="end" value="${esc(e.end)}"></label></div>
     <p class="hint">Leave the times empty for an all-day event.</p>
+    <label>Reminder<select id="f-remind" name="remind">${remindOptions(e.remind)}</select></label>
     <label>Project<select id="f-project" name="projectId">${projOptions(e.projectId)}</select></label>
     <label>Notes<textarea id="f-notes" name="notes" rows="3">${esc(e.notes)}</textarea></label>
     ${actions('event', e.id)}
@@ -1482,6 +1618,15 @@ function newProject() {
 }
 
 function onSubmit(form) {
+  if (form.dataset.kind === 'notif') {
+    const f = new FormData(form), btn = form.querySelector('[type=submit]');
+    notifAction(btn, 'Saving…', async () => {
+      const p = await readPush();
+      p.settings = { ...p.settings, eventDefault: Number(f.get('eventDefault')), taskTime: f.get('taskTime'), digest: f.has('digest'), digestTime: f.get('digestTime'), tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
+      await writePush(p); notif.settings = p.settings; persistNotif();
+    }, 'Reminder settings saved');
+    return;
+  }
   if (form.dataset.kind === 'pdf') {
     const f = new FormData(form), o = { title: (f.get('title') || '').trim(), subtitle: (f.get('subtitle') || '').trim(), page: f.get('page'), range: f.get('range'),
       arrows: f.has('arrows'), today: f.has('today'), legend: f.has('legend'), dates: f.has('dates') };
@@ -1498,7 +1643,7 @@ function onSubmit(form) {
   if (kind === 'event') {
     if (fd.endDate && fd.endDate <= fd.date) fd.endDate = '';
     if (fd.end && (!fd.start || fd.end <= fd.start)) fd.end = '';
-    list = db.events; item = { title: fd.title, date: fd.date, endDate: fd.endDate, start: fd.start, end: fd.end, projectId: fd.projectId, notes: fd.notes };
+    list = db.events; item = { title: fd.title, date: fd.date, endDate: fd.endDate, start: fd.start, end: fd.end, projectId: fd.projectId, notes: fd.notes, remind: fd.remind === '' || fd.remind === undefined ? null : Number(fd.remind) };
   } else if (kind === 'task') {
     const deps = fd.projectId ? raw.getAll('deps').filter(d => db.tasks.some(t => t.id === d && t.projectId === fd.projectId)) : [];
     if (!fd.start && deps.length) {
@@ -1521,8 +1666,10 @@ function onSubmit(form) {
 function dataSheet() {
   const json = JSON.stringify({ app: 'tidemark', version: 2, exported: new Date().toISOString(), ...db }, null, 2);
   const canDownload = window.self === window.top;
-  openModal(`<h2>Sync &amp; backup</h2>
+  openModal(`<h2>Settings</h2>
     ${syncSection()}
+    <hr>
+    <section class="syncbox" id="notif-box">${notifInner()}</section>
     <hr>
     <p class="muted" style="margin-top:0">Your planner is also saved in this browser. Copy a backup to keep it safe.</p>
     <label class="f" style="display:grid;gap:6px"><span class="eyebrow">Backup</span><textarea id="d-export" class="datatext f" readonly>${esc(json)}</textarea></label>
@@ -1539,6 +1686,7 @@ function dataSheet() {
     <div class="actions"><button class="btn" data-act="load-sample">Load examples</button><button class="btn danger" data-act="wipe">Erase everything</button><span class="grow"></span><button class="btn" data-act="close">Done</button></div>
     ${sync.token ? '<p class="hint" style="margin:8px 0 0">With sync on, restoring, loading examples or erasing also changes your other devices.</p>' : ''}`);
   updateSyncUI();
+  refreshNotif();
 }
 
 function armOrRun(btn, label, fn) {
@@ -1628,6 +1776,13 @@ document.addEventListener('click', ev => {
       break;
     }
     case 'sync-now': syncNow(); break;
+    case 'notif-on': notifAction(el, 'Turning on…', enableNotifications, 'Notifications are on. A test reminder from the service will follow within about 10 minutes.'); break;
+    case 'notif-off': armOrRun(el, 'Tap again to turn off', () => notifAction(el, 'Turning off…', disableNotifications, 'Notifications are off on this device')); break;
+    case 'notif-test': notifAction(el, 'Requesting…', async () => {
+      const p = await readPush(); p.testRequested = Date.now(); await writePush(p);
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('Test from this device', { body: 'This device can show notifications. A test from the reminder service will follow within about 10 minutes.', icon: 'icons/icon-192.png', badge: 'icons/badge-96.png', tag: 'tidemark-test' });
+    }); break;
     case 'sync-off': armOrRun(el, 'Tap again to turn off', () => { sync = {}; persistSync(); setSyncStatus('off'); dataSheet(); toast('Sync is off on this device. Your planner stays here.'); }); break;
     case 'copy-export': {
       const ta = $('#d-export');
@@ -1754,7 +1909,7 @@ setInterval(() => { if (todayStr() !== lastDay) { lastDay = todayStr(); render()
 ui.gtScroll = 'today';
 render();
 updateSyncUI();
-syncNow();
+syncNow().then(checkSubscription);
 
 /* offline support + install when served as a standalone site */
 if ('serviceWorker' in navigator && window.self === window.top && /^https:|^http:\/\/localhost/.test(location.href)) {

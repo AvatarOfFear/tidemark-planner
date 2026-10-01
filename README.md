@@ -32,6 +32,27 @@ Sync works on the hosted site (and the installed app), not in the claude.ai prev
 
 You can still copy a backup by hand from the same screen.
 
+## Notifications
+
+Tidemark can send reminders to your phone or computer even when the app is closed:
+before events (each event can choose its own reminder time), on the morning tasks and project deadlines are due, and an optional morning summary.
+
+How it works: each device that turns on notifications saves a Web Push subscription to the same secret gist used for sync (`tidemark-push.json`).
+A scheduled GitHub Action in the public repo (`.github/workflows/reminders.yml`, running `reminders/send.mjs`) checks every 5 minutes and sends any reminders that are due.
+
+Setup:
+1. Turn on sync (above).
+2. In the public repo, add an Actions secret named `GIST_TOKEN` containing your sync token (or another token with only the `gist` scope):
+   https://github.com/AvatarOfFear/tidemark-planner/settings/secrets/actions/new
+3. In the app, open **Settings → Notifications** and tap **Turn on notifications** on each device.
+   On iPhone and iPad, first add Tidemark to your Home Screen (Share → Add to Home Screen) and open it from there; Apple only allows notifications for Home Screen web apps (iOS 16.4 or later).
+
+Good to know:
+- GitHub runs scheduled workflows on a best-effort basis, so reminders can occasionally arrive a few minutes late. Reminders are sent up to 3 minutes early and up to 3 hours late, never twice.
+- Settings → Notifications shows when the reminder service last ran, and any error it hit.
+- GitHub pauses scheduled workflows in public repos after 60 days without commits; the workflow makes a tiny monthly commit (`.github/keepalive`) to prevent that.
+- The push keys and subscriptions are stored in your secret gist alongside your planner data.
+
 ## Running it
 
 - Quickest: open `index.html` in a browser.

@@ -5,7 +5,7 @@ name: Deploy planner to GitHub Pages
 on:
   push:
     branches: [main]
-    paths-ignore: [README.md]
+    paths-ignore: [README.md, .github/keepalive, .github/workflows/reminders.yml, reminders/**]
   workflow_dispatch:
 
 permissions:

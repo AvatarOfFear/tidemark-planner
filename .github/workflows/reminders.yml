@@ -1,0 +1,52 @@
+# Sends Tidemark reminder notifications (Web Push) every 5 minutes.
+# One-time setup: add a repository secret named GIST_TOKEN containing a GitHub token
+# with the "gist" scope (the same token you use for sync in the app).
+name: Send reminders
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+    - cron: '23 4 1 * *'   # monthly keep-alive, see below
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reminders
+  cancel-in-progress: false
+
+jobs:
+  send:
+    if: github.event.schedule != '23 4 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: reminders
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install web-push
+        working-directory: reminders
+        run: npm install --no-save --no-audit --no-fund web-push@3.6.7
+      - name: Send due reminders
+        working-directory: reminders
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: node send.mjs
+
+  # GitHub pauses scheduled workflows in public repos after 60 days without commits.
+  # A tiny monthly commit keeps the reminder schedule running.
+  keepalive:
+    if: github.event.schedule == '23 4 1 * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +%Y-%m-%dT%H:%MZ > .github/keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive
+          git commit -m "Keep reminder schedule active" && git push || echo "Nothing to commit"
