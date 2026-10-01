@@ -16,10 +16,20 @@ A calendar and project planner that runs in any browser and works on both phone 
 - Light and dark themes follow your system setting.
 - **Offline and installable**: when served over HTTPS it registers a service worker, so you can "Add to Home Screen" on a phone or "Install app" in Chrome/Edge on desktop.
 
-## Your data
+## Your data and sync
 
-Everything is saved in the browser's local storage on the device you use. Nothing is sent to a server.
-To move your planner between devices, open **Backup & data**, copy the backup, and restore it on the other device.
+Everything is saved in the browser on each device. To keep your phone and computer in sync, open **Sync & backup** and connect a GitHub token that has only the `gist` permission:
+
+1. Create the token at https://github.com/settings/tokens/new?scopes=gist&description=Tidemark%20Planner (only the **gist** box ticked).
+2. In the planner, open **Sync & backup**, paste the token, and tap **Connect**.
+3. Repeat on each device with the same token.
+
+The planner is stored in a secret gist named `tidemark-planner.json`. It syncs when you make a change, when you open the app, every minute while it is open, and when you come back online.
+Each project, task and event is merged on its own, using the newest edit, and deletions sync too. Editing different items on two devices at once loses nothing; if both edit the same item, the later edit wins.
+A secret gist does not appear on your profile or in search, but anyone with its exact link could read it. The token is stored only in that browser.
+Sync works on the hosted site (and the installed app), not in the claude.ai preview.
+
+You can still copy a backup by hand from the same screen.
 
 ## Running it
 

@@ -343,6 +343,23 @@ form.f { display: grid; gap: 12px; }
 .datatext { font: 12px/1.4 var(--f-mono); min-height: 140px; }
 .sheet hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 
+.syncstat {
+  display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; padding: 5px 8px; border-radius: 6px;
+  font-size: 12px; color: var(--muted); text-align: left;
+}
+.syncstat:hover { background: var(--surface-2); color: var(--fg); }
+.syncstat::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.syncstat.ok::before { background: var(--ok); }
+.syncstat.syncing::before { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.syncstat.offline::before { background: var(--warn); }
+.syncstat.error { color: var(--danger); }
+.syncstat.error::before { background: var(--danger); }
+@keyframes pulse { 50% { opacity: .3; } }
+.syncbox { display: grid; gap: 10px; }
+.syncbox p { margin: 0; }
+.syncbox ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.syncbox a { color: var(--accent); font-weight: 600; }
+#sync-line.error { color: var(--danger); }
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 60;
   background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 14px; box-shadow: var(--shadow);
@@ -402,7 +419,8 @@ form.f { display: grid; gap: 12px; }
     <button class="btn primary block" data-act="quick-add">+ New</button>
     <div class="summary" id="summary"></div>
     <div class="spacer"></div>
-    <button class="btn ghost block" data-act="data">Backup &amp; data</button>
+    <button class="syncstat" data-act="data"></button>
+    <button class="btn ghost block" data-act="data">Sync &amp; backup</button>
   </aside>
   <div>
     <div class="mtop">
@@ -410,6 +428,7 @@ form.f { display: grid; gap: 12px; }
         <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="4" width="28" height="26" rx="6" fill="var(--accent)"/><path d="M6 19c3-3 6-3 9 0s6 3 11-1" stroke="var(--accent-ink)" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
         <span>Tidemark</span>
       </div>
+      <button class="syncstat" data-act="data"></button>
     </div>
     <main id="main"></main>
   </div>
@@ -510,21 +529,25 @@ function normalize(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
   const str = v => (typeof v === 'string' ? v : '');
   const date = v => (isValidDate(v) ? v : '');
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : 0);
+  const deleted = {};
+  if (s.deleted && typeof s.deleted === 'object') Object.entries(s.deleted).forEach(([k, v]) => { if (typeof v === 'number') deleted[k] = v; });
   return {
     sample: !!s.sample,
+    deleted,
     projects: (Array.isArray(s.projects) ? s.projects : []).filter(p => p && p.name).map(p => ({
       id: str(p.id) || uid(), name: str(p.name), color: COLORS.includes(p.color) ? p.color : COLORS[0],
-      start: date(p.start), due: date(p.due), notes: str(p.notes),
+      start: date(p.start), due: date(p.due), notes: str(p.notes), updated: num(p.updated),
     })),
     tasks: (Array.isArray(s.tasks) ? s.tasks : []).filter(t => t && t.title).map(t => ({
       id: str(t.id) || uid(), title: str(t.title), projectId: str(t.projectId),
       status: ['todo', 'doing', 'done'].includes(t.status) ? t.status : 'todo',
       priority: PRI[t.priority] ? t.priority : 'med', start: date(t.start), due: date(t.due), notes: str(t.notes),
-      deps: Array.isArray(t.deps) ? t.deps.filter(v => typeof v === 'string') : [],
+      deps: Array.isArray(t.deps) ? t.deps.filter(v => typeof v === 'string') : [], updated: num(t.updated),
     })),
     events: (Array.isArray(s.events) ? s.events : []).filter(e => e && e.title && isValidDate(e.date)).map(e => ({
       id: str(e.id) || uid(), title: str(e.title), date: e.date, endDate: date(e.endDate),
-      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes),
+      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes), updated: num(e.updated),
     })),
   };
 }
@@ -532,11 +555,26 @@ function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) return normalize(JSON.parse(raw)); } catch (e) { /* storage unavailable */ }
   return normalize(sample());
 }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* storage unavailable */ } }
+function persist() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* storage unavailable */ } }
+// Change tracking for sync: every save stamps items that changed since the last save and
+// records a tombstone for items that disappeared, so edits from two devices can be merged per item.
+const ITEM_KEYS = ['projects', 'tasks', 'events'];
+const sig = o => { const { updated, ...rest } = o; return JSON.stringify(rest); };
+let snap = new Map();
+function snapshot() { snap = new Map(); ITEM_KEYS.forEach(k => db[k].forEach(o => snap.set(o.id, sig(o)))); }
+function stamp() {
+  const t = Date.now(), seen = new Set();
+  db.deleted = db.deleted || {};
+  ITEM_KEYS.forEach(k => db[k].forEach(o => { seen.add(o.id); if (snap.get(o.id) !== sig(o)) { o.updated = t; delete db.deleted[o.id]; } }));
+  snap.forEach((_, id) => { if (!seen.has(id)) db.deleted[id] = t; });
+  snapshot();
+}
+function save() { stamp(); persist(); scheduleSync(); }
 function saveUI() { try { localStorage.setItem(UIKEY, JSON.stringify({ view: ui.view, calMode: ui.calMode, projectId: ui.projectId, zoom: ui.zoom, ganttProject: ui.ganttProject })); } catch (e) {} }
 function loadUI() { try { return JSON.parse(localStorage.getItem(UIKEY)) || {}; } catch (e) { return {}; } }
 
 let db = load();
+snapshot();
 const now = new Date();
 const ui = Object.assign({ view: 'calendar', calMode: 'month', projectId: 'all', zoom: 'week', ganttProject: 'all' }, loadUI(), {
   collapsed: new Set(),
@@ -557,6 +595,142 @@ function itemsOn(ds) {
   return { ev, tk, dl };
 }
 const isLate = t => t.status !== 'done' && t.due && t.due < todayStr();
+
+/* ---------- sync (private GitHub gist) ---------- */
+const SYNCKEY = 'tidemark.sync', GIST_FILE = 'tidemark-planner.json', API = 'https://api.github.com';
+const SITE = 'https://avataroffear.github.io/tidemark-planner/';
+const canSync = window.self === window.top;
+let sync = (() => { try { return JSON.parse(localStorage.getItem(SYNCKEY)) || {}; } catch (e) { return {}; } })();
+const syncState = { busy: false, again: false, status: sync.token ? 'idle' : 'off', msg: '' };
+let syncTimer = null;
+function persistSync() { try { localStorage.setItem(SYNCKEY, JSON.stringify(sync)); } catch (e) {} }
+function scheduleSync(ms = 1500) { if (!sync.token || !canSync) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, ms); }
+
+function mergeDb(a, b) {
+  const deleted = { ...a.deleted };
+  Object.entries(b.deleted).forEach(([k, v]) => { if (!(deleted[k] >= v)) deleted[k] = v; });
+  const cutoff = Date.now() - 90 * 864e5;
+  Object.keys(deleted).forEach(k => { if (deleted[k] < cutoff) delete deleted[k]; });
+  const out = { sample: a.sample, deleted };
+  ITEM_KEYS.forEach(k => {
+    const m = new Map();
+    a[k].forEach(o => m.set(o.id, o));
+    b[k].forEach(o => { const c = m.get(o.id); if (!c || o.updated > c.updated) m.set(o.id, o); });
+    out[k] = [...m.values()].filter(o => !(deleted[o.id] >= o.updated));
+  });
+  return out;
+}
+const canon = d => JSON.stringify([ITEM_KEYS.map(k => d[k].map(o => JSON.stringify(o)).sort()), Object.keys(d.deleted).sort().map(k => [k, d.deleted[k]])]);
+const serialize = d => JSON.stringify({ app: 'tidemark', version: 2, saved: new Date().toISOString(), projects: d.projects, tasks: d.tasks, events: d.events, deleted: d.deleted });
+
+async function gh(method, path, body) {
+  const res = await fetch(API + path, {
+    method, cache: 'no-store', body: body ? JSON.stringify(body) : undefined,
+    headers: { Authorization: `Bearer ${sync.token}`, Accept: 'application/vnd.github+json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+  });
+  if (res.status === 401) { const e = new Error('GitHub did not accept the token. It may have expired or been deleted. Turn sync off and connect again with a new token.'); e.auth = true; throw e; }
+  if (res.status === 404) { const e = new Error('Not found'); e.notFound = true; throw e; }
+  if (res.status === 403) { const e = new Error('GitHub refused access. Check that the token has the gist permission.'); e.auth = true; throw e; }
+  if (!res.ok) throw new Error(`GitHub returned an error (${res.status}). Sync will try again shortly.`);
+  return res.json();
+}
+async function findGist() {
+  for (let page = 1; page <= 5; page++) {
+    const list = await gh('GET', `/gists?per_page=100&page=${page}`);
+    const g = list.find(x => x.files && x.files[GIST_FILE]);
+    if (g) return g.id;
+    if (list.length < 100) break;
+  }
+  return '';
+}
+async function pullRemote() {
+  try {
+    const g = await gh('GET', `/gists/${sync.gistId}`);
+    const f = g.files && g.files[GIST_FILE];
+    if (!f) return null;
+    const text = f.truncated ? await (await fetch(f.raw_url, { cache: 'no-store' })).text() : f.content;
+    return normalize(JSON.parse(text));
+  } catch (e) {
+    if (e.notFound) { sync.gistId = ''; return undefined; }
+    throw e;
+  }
+}
+async function syncNow() {
+  if (!sync.token || !canSync) return;
+  if (syncState.busy) { syncState.again = true; return; }
+  clearTimeout(syncTimer);
+  syncState.busy = true; setSyncStatus('syncing');
+  try {
+    if (!sync.gistId) sync.gistId = await findGist();
+    let remote = sync.gistId ? await pullRemote() : null;
+    if (remote === undefined) { sync.gistId = await findGist(); remote = sync.gistId ? await pullRemote() : null; }
+    if (!sync.gistId) {
+      const c = await gh('POST', '/gists', { description: 'Tidemark Planner sync data', public: false, files: { [GIST_FILE]: { content: serialize(db) } } });
+      sync.gistId = c.id;
+    } else {
+      // A device that only has the built-in examples takes the synced planner as is.
+      const base = sync.fresh && db.sample && remote ? normalize({ deleted: {} }) : db;
+      const merged = normalize(remote ? mergeDb(base, remote) : base);
+      merged.sample = remote && sync.fresh && db.sample ? false : db.sample;
+      if (canon(merged) !== canon(db) || merged.sample !== db.sample) {
+        db = merged; persist(); snapshot();
+        if (typeof drag === 'undefined' || !drag) render();
+      }
+      if (!remote || canon(merged) !== canon(remote)) await gh('PATCH', `/gists/${sync.gistId}`, { files: { [GIST_FILE]: { content: serialize(merged) } } });
+    }
+    sync.fresh = false; sync.last = Date.now(); persistSync(); setSyncStatus('ok');
+  } catch (e) {
+    persistSync();
+    setSyncStatus(e.auth ? 'error' : navigator.onLine === false || e instanceof TypeError ? 'offline' : 'error', e.message || String(e));
+  } finally {
+    syncState.busy = false;
+    if (syncState.again) { syncState.again = false; scheduleSync(300); }
+  }
+}
+function ago(t) {
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return fmt(new Date(t), { day: 'numeric', month: 'short' });
+}
+function syncText() {
+  const st = syncState.status;
+  if (!canSync) return 'Sync works in the installed app';
+  if (st === 'off') return 'Set up sync';
+  if (st === 'syncing') return 'Syncing…';
+  if (st === 'offline') return 'Offline · will sync later';
+  if (st === 'error') return 'Sync problem · tap for details';
+  return sync.last ? `Synced ${ago(sync.last)}` : 'Sync on';
+}
+function setSyncStatus(status, msg = '') { syncState.status = status; syncState.msg = msg; updateSyncUI(); }
+function updateSyncUI() {
+  document.querySelectorAll('.syncstat').forEach(el => { el.textContent = syncText(); el.className = `syncstat ${syncState.status}`; el.title = syncState.msg || ''; });
+  const line = document.getElementById('sync-line');
+  if (line) { line.textContent = syncState.status === 'error' || syncState.status === 'offline' ? `${syncText()}. ${syncState.msg}` : syncText(); line.className = syncState.status; }
+}
+function syncSection() {
+  if (!canSync) {
+    return `<section class="syncbox"><div class="eyebrow">Sync across devices</div>
+      <p class="muted">Sync is not available in this preview. Open the planner at <a href="${SITE}" target="_blank" rel="noopener">${SITE.replace('https://', '')}</a> on each device and turn sync on there.</p></section>`;
+  }
+  if (sync.token) {
+    return `<section class="syncbox"><div class="eyebrow">Sync across devices</div>
+      <p id="sync-line"></p>
+      <p class="muted">Changes sync automatically when you edit, when you open the app, and every minute while it is open. Use the same token on every device.</p>
+      <div class="actions"><button class="btn primary" data-act="sync-now">Sync now</button><button class="btn" data-act="sync-off">Turn off sync on this device</button></div></section>`;
+  }
+  return `<section class="syncbox"><div class="eyebrow">Sync across devices</div>
+    <p>Keep your planner the same on your phone and computer. It is saved to a secret gist in your GitHub account.</p>
+    <ol>
+      <li><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Tidemark%20Planner" target="_blank" rel="noopener">Create a GitHub token</a>. Only the <b>gist</b> box should be ticked. Choose a long expiration.</li>
+      <li>Paste the token below and tap Connect.</li>
+      <li>Do the same on your other devices, using the same token.</li>
+    </ol>
+    <div class="f"><label>GitHub token<input id="s-token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…"></label></div>
+    <div class="actions"><button class="btn primary" data-act="sync-connect">Connect</button></div>
+    <p class="hint" style="margin:0">The token is stored only in this browser and can only read and write your gists. A secret gist does not appear on your profile or in search, but anyone who has its exact link could read it.</p></section>`;
+}
 
 /* ---------- rendering ---------- */
 const main = $('#main');
@@ -955,7 +1129,8 @@ function openModal(html) {
   sheet.innerHTML = html;
   modal.hidden = false;
   const f = sheet.querySelector('input:not([type=radio]), select, textarea, button');
-  if (f) f.focus();
+  if (f) f.focus({ preventScroll: true });
+  sheet.scrollTop = 0;
 }
 function closeModal() { modal.hidden = true; sheet.innerHTML = ''; if (lastFocus && lastFocus.isConnected) lastFocus.focus(); }
 function toast(msg) {
@@ -1058,10 +1233,12 @@ function onSubmit(form) {
 }
 
 function dataSheet() {
-  const json = JSON.stringify({ app: 'tidemark', version: 1, exported: new Date().toISOString(), ...db }, null, 2);
+  const json = JSON.stringify({ app: 'tidemark', version: 2, exported: new Date().toISOString(), ...db }, null, 2);
   const canDownload = window.self === window.top;
-  openModal(`<h2>Backup &amp; data</h2>
-    <p class="muted" style="margin-top:-6px">Your planner is saved in this browser on this device. Copy a backup to move it to another device or keep it safe.</p>
+  openModal(`<h2>Sync &amp; backup</h2>
+    ${syncSection()}
+    <hr>
+    <p class="muted" style="margin-top:0">Your planner is also saved in this browser. Copy a backup to keep it safe.</p>
     <label class="f" style="display:grid;gap:6px"><span class="eyebrow">Backup</span><textarea id="d-export" class="datatext f" readonly>${esc(json)}</textarea></label>
     <div class="actions"><button class="btn primary" data-act="copy-export">Copy backup</button>${canDownload ? '<button class="btn" data-act="download-export">Download file</button>' : ''}</div>
     <hr>
@@ -1073,7 +1250,9 @@ function dataSheet() {
     </div>
     <div class="actions"><button class="btn" data-act="do-import">Restore backup</button></div>
     <hr>
-    <div class="actions"><button class="btn" data-act="load-sample">Load examples</button><button class="btn danger" data-act="wipe">Erase everything</button><span class="grow"></span><button class="btn" data-act="close">Done</button></div>`);
+    <div class="actions"><button class="btn" data-act="load-sample">Load examples</button><button class="btn danger" data-act="wipe">Erase everything</button><span class="grow"></span><button class="btn" data-act="close">Done</button></div>
+    ${sync.token ? '<p class="hint" style="margin:8px 0 0">With sync on, restoring, loading examples or erasing also changes your other devices.</p>' : ''}`);
+  updateSyncUI();
 }
 
 function armOrRun(btn, label, fn) {
@@ -1146,6 +1325,23 @@ document.addEventListener('click', ev => {
     case 'keep-sample': db.sample = false; save(); render(); break;
     case 'clear-all': db = normalize({}); save(); ui.projectId = 'all'; render(); toast('Examples cleared'); break;
     case 'data': dataSheet(); break;
+    case 'sync-connect': {
+      const t = ($('#s-token')?.value || '').trim();
+      if (!/^(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})$/.test(t)) { toast('That does not look like a GitHub token. It starts with ghp_ or github_pat_.'); break; }
+      sync = { token: t, gistId: '', last: 0, fresh: true }; persistSync();
+      el.disabled = true; el.textContent = 'Connecting…';
+      syncNow().then(() => {
+        if (syncState.status === 'ok') { toast('Sync is on'); dataSheet(); }
+        else {
+          const auth = /token|refused/.test(syncState.msg);
+          sync = {}; persistSync(); setSyncStatus('off'); dataSheet();
+          toast(auth ? 'GitHub did not accept that token. Check you copied all of it and ticked the gist box.' : 'Could not reach GitHub. Check your connection and try again.');
+        }
+      });
+      break;
+    }
+    case 'sync-now': syncNow(); break;
+    case 'sync-off': armOrRun(el, 'Tap again to turn off', () => { sync = {}; persistSync(); setSyncStatus('off'); dataSheet(); toast('Sync is off on this device. Your planner stays here.'); }); break;
     case 'copy-export': {
       const ta = $('#d-export');
       const fallback = () => { ta.focus(); ta.select(); toast('Selected. Press Ctrl+C or Cmd+C to copy'); };
@@ -1255,7 +1451,14 @@ main.addEventListener('pointerup', ev => endDrag(ev, false));
 main.addEventListener('pointercancel', ev => endDrag(ev, true));
 
 /* keep in sync with other tabs, re-render on resize breakpoints and at midnight */
-window.addEventListener('storage', ev => { if (ev.key === KEY) { db = load(); render(); } });
+window.addEventListener('storage', ev => {
+  if (ev.key === KEY) { db = load(); snapshot(); render(); }
+  if (ev.key === SYNCKEY) { try { sync = JSON.parse(ev.newValue) || {}; } catch (e) { sync = {}; } setSyncStatus(sync.token ? 'ok' : 'off'); }
+});
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
+window.addEventListener('online', () => syncNow());
+setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
+setInterval(updateSyncUI, 20000);
 let lastNarrow = window.innerWidth < 640;
 window.addEventListener('resize', () => { const n = window.innerWidth < 640; if (n !== lastNarrow) { lastNarrow = n; if (modal.hidden) render(); } });
 let lastDay = todayStr();
@@ -1263,6 +1466,8 @@ setInterval(() => { if (todayStr() !== lastDay) { lastDay = todayStr(); render()
 
 ui.gtScroll = 'today';
 render();
+updateSyncUI();
+syncNow();
 
 /* offline support + install when served as a standalone site */
 if ('serviceWorker' in navigator && window.self === window.top && /^https:|^http:\/\/localhost/.test(location.href)) {

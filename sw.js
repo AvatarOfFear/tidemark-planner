@@ -1,5 +1,5 @@
 // Caches the app shell so the planner opens offline. Data lives in localStorage, not here.
-const CACHE = 'tidemark-v2';
+const CACHE = 'tidemark-v3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -16,7 +16,7 @@ self.addEventListener('activate', e => {
 
 // Network first, falling back to the cache, so updates show up when online.
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
+  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {
