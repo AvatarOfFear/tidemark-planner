@@ -18,7 +18,10 @@ A calendar and project planner that runs in any browser and works on both phone 
   Tasks and events default to **Auto** (A), which uses their project's color. Colors show on the calendar, day list, board, Gantt chart and PDF export.
 - **Work and personal**: every project, task and event is marked Work or Personal. Tasks and events in a project follow the project, so changing a project moves everything in it.
   The **All · Work · Personal** switch (sidebar on desktop, top of the screen on mobile) filters the calendar, agenda, projects, Gantt chart, counts and PDF exports. New items default to the side you are viewing. Items without a setting from before this feature count as Work.
-- Light and dark themes follow your system setting.
+- **Theme editor** (Theme in the sidebar, or Settings → Appearance → Edit theme): System, Light or Dark mode; 8 ready-made themes including High contrast;
+  a custom main color and Work/Personal colors (presets or the color wheel); Tinted, Neutral, Warm or High-contrast backgrounds; Tidemark, System,
+  Readable (Atkinson Hyperlegible) or Serif fonts; four text sizes; and Square, Soft or Round corners. Changes preview live and are saved on each device.
+  Colors are adjusted automatically so text keeps at least 4.5:1 contrast (7:1 for High contrast) in both light and dark mode.
 - **Offline and installable**: when served over HTTPS it registers a service worker, so you can "Add to Home Screen" on a phone or "Install app" in Chrome/Edge on desktop.
 
 ## Your data and sync

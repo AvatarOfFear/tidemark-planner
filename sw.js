@@ -1,6 +1,6 @@
 // Caches the app shell so the planner opens offline, and shows reminder notifications.
 // Data lives in localStorage, not here.
-const CACHE = 'tidemark-v5';
+const CACHE = 'tidemark-v6';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icons/icon-192.png', './icons/badge-96.png', './vendor/jspdf.umd.min.js'];
 
 self.addEventListener('install', e => {
