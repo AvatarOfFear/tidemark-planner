@@ -190,6 +190,7 @@ main { min-width: 0; padding: 26px 28px 40px; }
 .check.on { background: var(--c, var(--muted)); }
 .check.on::after { content: ""; width: 8px; height: 4px; border: 2px solid var(--surface); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
 .item.task .when { display: flex; justify-content: flex-end; }
+.item.ev .when { border-left: 3px solid var(--c, transparent); padding-left: 7px; }
 .item.done .t { color: var(--muted); text-decoration: line-through; }
 .empty { color: var(--muted); padding: 14px 6px; font-size: 14px; }
 
@@ -335,6 +336,20 @@ form.f { display: grid; gap: 12px; }
 .swatches span { display: block; width: 30px; height: 30px; border-radius: 50%; background: var(--c); border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .swatches input:checked + span { box-shadow: 0 0 0 2px var(--fg); }
 .swatches input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.swatches .sw-auto span { background: var(--surface); position: relative; overflow: hidden; box-shadow: 0 0 0 1px var(--muted); }
+.swatches .sw-auto span::after { content: "A"; position: absolute; inset: 0; display: grid; place-items: center; font: 700 12px var(--f-body); color: var(--muted); }
+.swatches .sw-custom span { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); position: relative; }
+.swatches .sw-custom.has span::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--surface); }
+.colorfield .cf-cap { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-weight: 400; }
+.wheel { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 16px; align-items: center; margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.wheel-disc { position: relative; width: 176px; height: 176px; touch-action: none; cursor: crosshair; border-radius: 50%; }
+.wheel-disc canvas { width: 176px; height: 176px; display: block; border-radius: 50%; }
+.wheel-mark { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5), inset 0 0 0 1px rgba(0,0,0,.3); pointer-events: none; }
+.wheel-side { display: grid; gap: 10px; min-width: 0; }
+.wheel-prev { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--c); }
+.wheel-side input[type=range] { width: 100%; accent-color: var(--fg); }
+.wheel-side .hexin { font-family: var(--f-mono); text-transform: lowercase; }
+@media (max-width: 420px) { .wheel { grid-template-columns: 1fr; justify-items: center; } .wheel-side { width: 100%; } .swatches { gap: 5px; } .swatches span { width: 28px; height: 28px; } }
 .f .deps { display: grid; gap: 2px; max-height: 168px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .f .dep { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 400; color: var(--fg); padding: 3px 0; }
 .f .dep input { width: auto; margin: 0; }
@@ -470,7 +485,9 @@ form.f { display: grid; gap: 12px; }
 (() => {
 'use strict';
 const KEY = 'tidemark.v1', UIKEY = 'tidemark.ui';
-const COLORS = ['#3b82c4', '#2f9e78', '#d08a1f', '#c2477a', '#7c5cc4', '#d0573a', '#4a8f9e'];
+const COLORS = ['#3b82c4', '#2f9e78', '#d08a1f', '#c2477a', '#7c5cc4', '#d0573a', '#4a8f9e', '#8b5a2b'];
+const COLOR_NAMES = ['Blue', 'Green', 'Amber', 'Rose', 'Violet', 'Orange', 'Teal', 'Brown'];
+const isHex = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const STATUS = [['todo', 'To do'], ['doing', 'In progress'], ['done', 'Done']];
 const PRI = { high: 'High', med: 'Medium', low: 'Low' };
 const ICONS = {
@@ -563,18 +580,18 @@ function normalize(raw) {
     sample: !!s.sample,
     deleted,
     projects: (Array.isArray(s.projects) ? s.projects : []).filter(p => p && p.name).map(p => ({
-      id: str(p.id) || uid(), name: str(p.name), color: COLORS.includes(p.color) ? p.color : COLORS[0],
+      id: str(p.id) || uid(), name: str(p.name), color: isHex(p.color) ? p.color.toLowerCase() : COLORS[0],
       start: date(p.start), due: date(p.due), notes: str(p.notes), area: area(p.area), updated: num(p.updated),
     })),
     tasks: (Array.isArray(s.tasks) ? s.tasks : []).filter(t => t && t.title).map(t => ({
       id: str(t.id) || uid(), title: str(t.title), projectId: str(t.projectId),
       status: ['todo', 'doing', 'done'].includes(t.status) ? t.status : 'todo',
       priority: PRI[t.priority] ? t.priority : 'med', start: date(t.start), due: date(t.due), notes: str(t.notes),
-      deps: Array.isArray(t.deps) ? t.deps.filter(v => typeof v === 'string') : [], area: area(t.area), updated: num(t.updated),
+      deps: Array.isArray(t.deps) ? t.deps.filter(v => typeof v === 'string') : [], area: area(t.area), color: isHex(t.color) ? t.color.toLowerCase() : '', updated: num(t.updated),
     })),
     events: (Array.isArray(s.events) ? s.events : []).filter(e => e && e.title && isValidDate(e.date)).map(e => ({
       id: str(e.id) || uid(), title: str(e.title), date: e.date, endDate: date(e.endDate),
-      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes), remind: typeof e.remind === 'number' ? e.remind : null, area: area(e.area), updated: num(e.updated),
+      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes), remind: typeof e.remind === 'number' ? e.remind : null, area: area(e.area), color: isHex(e.color) ? e.color.toLowerCase() : '', updated: num(e.updated),
     })),
   };
 }
@@ -623,6 +640,7 @@ const defaultArea = () => (ui.area !== 'all' ? ui.area : ui.lastArea || 'work');
 const atag = o => (ui.area === 'all' ? `<span class="atag ${areaOf(o)}">${areaName(areaOf(o))}</span>` : '');
 const areaEyebrow = label => `${label}${ui.area === 'all' ? '' : ` · <span class="on-${ui.area}">${areaName(ui.area)}</span>`}`;
 const colorOf = id => proj(id)?.color || 'var(--muted)';
+const itemColor = o => o.color || colorOf(o.projectId);
 const projLabel = id => { const p = proj(id); return p ? `<span class="pdot" style="--c:${p.color}">${esc(p.name)}</span>` : ''; };
 function itemsOn(ds) {
   const ev = V.events().filter(e => e.date <= ds && ds <= (e.endDate || e.date))
@@ -944,10 +962,10 @@ function renderSummary() {
 
 function chip(kind, o) {
   if (kind === 'event') {
-    return `<button class="chip ev" data-act="edit-event" data-id="${o.id}" style="--c:${colorOf(o.projectId)}">${o.start ? `<b>${o.start}</b> ` : ''}${esc(o.title)}</button>`;
+    return `<button class="chip ev" data-act="edit-event" data-id="${o.id}" style="--c:${itemColor(o)}">${o.start ? `<b>${o.start}</b> ` : ''}${esc(o.title)}</button>`;
   }
   if (kind === 'task') {
-    return `<button class="chip tk ${o.status === 'done' ? 'done' : ''}" data-act="edit-task" data-id="${o.id}" style="--c:${colorOf(o.projectId)}"><span class="box"></span>${esc(o.title)}</button>`;
+    return `<button class="chip tk ${o.status === 'done' ? 'done' : ''}" data-act="edit-task" data-id="${o.id}" style="--c:${itemColor(o)}"><span class="box"></span>${esc(o.title)}</button>`;
   }
   return `<button class="chip dl" data-act="edit-project" data-id="${o.id}" style="--c:${o.color}">Due: ${esc(o.name)}</button>`;
 }
@@ -992,7 +1010,7 @@ function renderMonth() {
       const cls = ['day', d.getMonth() !== mo && 'out', ds === t && 'today', ds === ui.selected && 'sel', i >= 5 && 'wkend'].filter(Boolean).join(' ');
       const all = [...dl.map(p => chip('deadline', p)), ...ev.map(e => chip('event', e)), ...tk.map(x => chip('task', x))];
       const shown = all.slice(0, 3), more = all.length - shown.length;
-      const dots = [...dl.map(p => p.color), ...ev.map(e => colorOf(e.projectId)), ...tk.map(x => colorOf(x.projectId))].slice(0, 4);
+      const dots = [...dl.map(p => p.color), ...ev.map(itemColor), ...tk.map(itemColor)].slice(0, 4);
       h += `<div class="${cls}" role="gridcell" tabindex="0" data-act="select-day" data-date="${ds}" aria-label="${esc(longDate(d))}, ${all.length} item${all.length === 1 ? '' : 's'}">
         <span class="num">${d.getDate()}</span>
         <div class="chips">${shown.join('')}${more ? `<span class="more">+${more} more</span>` : ''}</div>
@@ -1011,7 +1029,7 @@ function itemRows(ds, { ev, tk, dl }) {
   ev.forEach(e => {
     const multi = e.endDate && e.endDate !== e.date;
     const when = e.start ? `${e.start}${e.end ? `<br>${e.end}` : ''}` : 'All day';
-    rows.push(`<li class="item"><span class="when">${when}</span><div class="what">
+    rows.push(`<li class="item ev" style="--c:${itemColor(e)}"><span class="when">${when}</span><div class="what">
       <button class="t" data-act="edit-event" data-id="${e.id}">${esc(e.title)}</button>
       <div class="meta">${atag(e)}${projLabel(e.projectId)}${multi ? `<span>${shortDate(e.date)} – ${shortDate(e.endDate)}</span>` : ''}${e.notes ? `<span>${esc(e.notes.slice(0, 80))}</span>` : ''}</div></div></li>`);
   });
@@ -1020,7 +1038,7 @@ function itemRows(ds, { ev, tk, dl }) {
 }
 function taskRow(x, showDue) {
   const done = x.status === 'done';
-  return `<li class="item task ${done ? 'done' : ''}"><span class="when"><button class="check ${done ? 'on' : ''}" style="--c:${colorOf(x.projectId)}" data-act="toggle-task" data-id="${x.id}" aria-label="${done ? 'Mark not done' : 'Mark done'}: ${esc(x.title)}"></button></span><div class="what">
+  return `<li class="item task ${done ? 'done' : ''}"><span class="when"><button class="check ${done ? 'on' : ''}" style="--c:${itemColor(x)}" data-act="toggle-task" data-id="${x.id}" aria-label="${done ? 'Mark not done' : 'Mark done'}: ${esc(x.title)}"></button></span><div class="what">
     <button class="t" data-act="edit-task" data-id="${x.id}">${esc(x.title)}</button>
     <div class="meta">${atag(x)}${projLabel(x.projectId)}<span>${STATUS.find(s => s[0] === x.status)[1]}</span>${showDue && x.due ? `<span class="${isLate(x) ? 'late' : ''}">Due ${relDays(x.due)}</span>` : ''}</div></div></li>`;
 }
@@ -1098,7 +1116,7 @@ function renderProjects() {
     const next = STATUS[idx + 1];
     return `<section class="col" data-status="${k}" aria-label="${label}">
       <header><h3>${label}</h3><span class="mono">${list.length}</span></header>
-      <div class="cards">${list.map(x => `<article class="card ${k === 'done' ? 'done' : ''}" draggable="true" data-id="${x.id}" style="--c:${colorOf(x.projectId)}">
+      <div class="cards">${list.map(x => `<article class="card ${k === 'done' ? 'done' : ''}" draggable="true" data-id="${x.id}" style="--c:${itemColor(x)}">
           <button class="t" data-act="edit-task" data-id="${x.id}">${esc(x.title)}</button>
           <div class="meta">
             ${x.priority !== 'low' || k !== 'done' ? `<span class="pill ${x.priority}">${PRI[x.priority]}</span>` : ''}
@@ -1202,7 +1220,7 @@ function renderGantt() {
       return `<div class="gt-row group"><div class="gt-lab"><button class="tog" data-act="gt-toggle" data-id="none" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} tasks without a project">${open ? '▾' : '▸'}</button><span class="t muted">No project</span>
         <button class="addsm" data-act="new-task" data-project="" aria-label="Add task without a project">+<span class="wd"> Task</span></button></div><div class="gt-track"></div></div>`;
     }
-    const t = r.t, sp = taskSpan(t), done = t.status === 'done', c = colorOf(t.projectId);
+    const t = r.t, sp = taskSpan(t), done = t.status === 'done', c = itemColor(t);
     rowIndex[t.id] = i;
     let mark = '';
     if (sp && sp.ms) {
@@ -1479,7 +1497,7 @@ async function exportGanttPdf(o) {
         doc.setFont('helvetica', 'bold'); doc.setFontSize(fs + 0.5); doc.setTextColor(...PC.muted);
         doc.text('No project', M + 8, cy, { baseline: 'middle' });
       } else {
-        const t = r.t, sp = taskSpan(t), done = t.status === 'done', late = isLate(t), col = proj(t.projectId)?.color || '#7a8b8c';
+        const t = r.t, sp = taskSpan(t), done = t.status === 'done', late = isLate(t), col = t.color || proj(t.projectId)?.color || '#7a8b8c';
         const indent = sel === 'all' || sel === 'none' ? 17 : 8;
         doc.setDrawColor(...hexRgb(col)); doc.setLineWidth(0.8);
         doc.setFillColor(...(done ? hexRgb(col) : PC.white)); doc.rect(M + indent, cy - 3.5, 7, 7, 'FD');
@@ -1592,6 +1610,75 @@ const projOptions = sel => `<option value="">No project</option>` + AREAS.map(([
   const ps = db.projects.filter(p => p.area === k);
   return ps.length ? `<optgroup label="${l}">${ps.map(p => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</optgroup>` : '';
 }).join('');
+// Color picker: 8 presets, a custom color wheel, and (for events and tasks) Auto = the project's color.
+function colorField(val, auto) {
+  const custom = isHex(val) && !COLORS.includes(val) ? val : '';
+  return `<div class="colorfield" data-cf>
+    <div class="eyebrow" style="margin-bottom:6px">Color</div>
+    <div class="swatches" role="radiogroup" aria-label="Color">
+      ${auto ? `<label class="sw-auto" title="Use the project's color"><input type="radio" name="color" value="" ${!val ? 'checked' : ''} aria-label="Automatic: use the project's color"><span></span></label>` : ''}
+      ${COLORS.map((c, i) => `<label title="${COLOR_NAMES[i]}"><input type="radio" name="color" value="${c}" ${val === c ? 'checked' : ''} aria-label="${COLOR_NAMES[i]}"><span style="--c:${c}"></span></label>`).join('')}
+      <label class="sw-custom ${custom ? 'has' : ''}" title="Custom color" style="--c:${custom || 'transparent'}"><input type="radio" name="color" value="${custom}" data-cf-custom ${custom ? 'checked' : ''} aria-label="Custom color${custom ? ` ${custom}` : ''}"><span></span></label>
+    </div>
+    ${auto ? '<p class="cf-cap">A = use the project\'s color. The rainbow swatch opens a color wheel.</p>' : '<p class="cf-cap">The rainbow swatch opens a color wheel for any color.</p>'}
+    <div class="wheel" data-cf-wheel hidden>
+      <div class="wheel-disc" data-cf-disc><canvas width="352" height="352" aria-hidden="true"></canvas><span class="wheel-mark" data-cf-mark></span></div>
+      <div class="wheel-side">
+        <div class="wheel-prev" data-cf-prev></div>
+        <label>Brightness<input type="range" min="15" max="100" value="85" data-cf-v aria-label="Brightness"></label>
+        <label>Hex code<input class="hexin" data-cf-hex maxlength="7" spellcheck="false" autocomplete="off" placeholder="#3b82c4" aria-label="Hex color code"></label>
+      </div>
+    </div>
+  </div>`;
+}
+const hsvToHex = (h, sat, v) => {
+  const f = n => { const k = (n + h / 60) % 6; return v - v * sat * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return '#' + [f(5), f(3), f(1)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+};
+const hexToHsv = hex => {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0, v: mx };
+};
+function cfDraw(cf) {
+  const cv = cf.querySelector('canvas'), ctx = cv.getContext('2d'), N = cv.width, R = N / 2, v = cf._hsv.v;
+  const img = ctx.createImageData(N, N), d = img.data;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = x - R + 0.5, dy = y - R + 0.5, r = Math.sqrt(dx * dx + dy * dy) / R, i = (y * N + x) * 4;
+    if (r > 1) continue;
+    const h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+    const f = n => { const k = (n + h / 60) % 6; return v - v * r * Math.max(0, Math.min(k, 4 - k, 1)); };
+    d[i] = f(5) * 255; d[i + 1] = f(3) * 255; d[i + 2] = f(1) * 255; d[i + 3] = r > 0.985 ? (1 - r) / 0.015 * 255 : 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function cfSet(cf, hsv, { redraw = false, fromHex = false } = {}) {
+  const old = cf._hsv; cf._hsv = hsv;
+  const hex = hsvToHex(hsv.h, hsv.s, hsv.v), mark = cf.querySelector('[data-cf-mark]'), a = hsv.h * Math.PI / 180;
+  mark.style.left = `${88 + Math.cos(a) * hsv.s * 88}px`; mark.style.top = `${88 + Math.sin(a) * hsv.s * 88}px`; mark.style.background = hex;
+  cf.querySelector('[data-cf-prev]').style.setProperty('--c', hex);
+  cf.querySelector('[data-cf-v]').value = Math.round(hsv.v * 100);
+  if (!fromHex) cf.querySelector('[data-cf-hex]').value = hex;
+  const radio = cf.querySelector('[data-cf-custom]'), lab = radio.closest('label');
+  radio.value = hex; radio.checked = true; radio.setAttribute('aria-label', `Custom color ${hex}`);
+  lab.classList.add('has'); lab.style.setProperty('--c', hex);
+  if (redraw || !old || old.v !== hsv.v) cfDraw(cf);
+}
+function cfOpen(cf) {
+  const wheel = cf.querySelector('[data-cf-wheel]');
+  if (!wheel.hidden && cf._hsv) return;
+  wheel.hidden = false;
+  const cur = cf.querySelector('input[name=color]:checked')?.value;
+  cfSet(cf, isHex(cur) ? hexToHsv(cur) : { h: 210, s: 0.65, v: 0.8 }, { redraw: true });
+}
+function cfPick(cf, ev) {
+  const r = cf.querySelector('[data-cf-disc]').getBoundingClientRect();
+  const dx = ev.clientX - r.left - r.width / 2, dy = ev.clientY - r.top - r.height / 2;
+  cfSet(cf, { h: (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, s: Math.min(1, Math.hypot(dx, dy) / (r.width / 2)), v: cf._hsv.v });
+}
+
 function areaField(o, kind) {
   const p = kind !== 'project' && proj(o.projectId);
   const val = p ? p.area : o.area || defaultArea();
@@ -1614,6 +1701,7 @@ function eventForm(e) {
     <label>Reminder<select id="f-remind" name="remind">${remindOptions(e.remind)}</select></label>
     <label>Project<select id="f-project" name="projectId">${projOptions(e.projectId)}</select></label>
     ${areaField(e, 'event')}
+    ${colorField(e.color, true)}
     <label>Notes<textarea id="f-notes" name="notes" rows="3">${esc(e.notes)}</textarea></label>
     ${actions('event', e.id)}
   </form>`;
@@ -1637,6 +1725,7 @@ function taskForm(x) {
     <div id="f-deps">${depsField(x.id, x.deps || [], x.projectId)}</div>
     <div class="two"><label>Status<select id="f-status" name="status">${STATUS.map(([k, n]) => `<option value="${k}" ${x.status === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label>Priority<select id="f-priority" name="priority">${Object.entries(PRI).map(([k, n]) => `<option value="${k}" ${x.priority === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
+    ${colorField(x.color, true)}
     <label>Notes<textarea id="f-notes" name="notes" rows="3">${esc(x.notes)}</textarea></label>
     ${actions('task', x.id)}
   </form>`;
@@ -1648,7 +1737,7 @@ function projectForm(p) {
     <div class="two"><label>Start<input id="f-start" type="date" name="start" value="${esc(p.start)}"></label>
       <label>Deadline<input id="f-due" type="date" name="due" value="${esc(p.due)}"></label></div>
     ${areaField(p, 'project')}
-    <div><div class="eyebrow" style="margin-bottom:6px">Color</div><div class="swatches">${COLORS.map((c, i) => `<label><input type="radio" name="color" value="${c}" ${p.color === c ? 'checked' : ''} aria-label="Color ${i + 1}"><span style="--c:${c}"></span></label>`).join('')}</div></div>
+    ${colorField(p.color, false)}
     <label>Notes<textarea id="f-notes" name="notes" rows="3">${esc(p.notes)}</textarea></label>
     ${p.id ? '<p class="hint" style="margin:0">Deleting a project keeps its tasks and events; they become unassigned.</p>' : ''}
     ${actions('project', p.id)}
@@ -1696,7 +1785,7 @@ function onSubmit(form) {
     if (fd.endDate && fd.endDate <= fd.date) fd.endDate = '';
     if (fd.end && (!fd.start || fd.end <= fd.start)) fd.end = '';
     fd.area = proj(fd.projectId)?.area || (fd.area === 'personal' ? 'personal' : 'work');
-    list = db.events; item = { area: fd.area, title: fd.title, date: fd.date, endDate: fd.endDate, start: fd.start, end: fd.end, projectId: fd.projectId, notes: fd.notes, remind: fd.remind === '' || fd.remind === undefined ? null : Number(fd.remind) };
+    list = db.events; item = { color: isHex(fd.color) ? fd.color.toLowerCase() : '', area: fd.area, title: fd.title, date: fd.date, endDate: fd.endDate, start: fd.start, end: fd.end, projectId: fd.projectId, notes: fd.notes, remind: fd.remind === '' || fd.remind === undefined ? null : Number(fd.remind) };
   } else if (kind === 'task') {
     const deps = fd.projectId ? raw.getAll('deps').filter(d => db.tasks.some(t => t.id === d && t.projectId === fd.projectId)) : [];
     if (!fd.start && deps.length) {
@@ -1706,11 +1795,11 @@ function onSubmit(form) {
     }
     if (fd.start && fd.due && fd.due < fd.start) { const t = fd.start; fd.start = fd.due; fd.due = t; }
     fd.area = proj(fd.projectId)?.area || (fd.area === 'personal' ? 'personal' : 'work');
-    list = db.tasks; item = { area: fd.area, title: fd.title, projectId: fd.projectId, start: fd.start, due: fd.due, deps, status: fd.status, priority: fd.priority, notes: fd.notes };
+    list = db.tasks; item = { color: isHex(fd.color) ? fd.color.toLowerCase() : '', area: fd.area, title: fd.title, projectId: fd.projectId, start: fd.start, due: fd.due, deps, status: fd.status, priority: fd.priority, notes: fd.notes };
   } else {
     if (fd.start && fd.due && fd.due < fd.start) { const s = fd.start; fd.start = fd.due; fd.due = s; }
     fd.area = fd.area === 'personal' ? 'personal' : 'work';
-    list = db.projects; item = { name: fd.name, color: fd.color || COLORS[0], start: fd.start, due: fd.due, notes: fd.notes, area: fd.area };
+    list = db.projects; item = { name: fd.name, color: isHex(fd.color) ? fd.color.toLowerCase() : COLORS[0], start: fd.start, due: fd.due, notes: fd.notes, area: fd.area };
     if (id) [...db.tasks, ...db.events].forEach(o => { if (o.projectId === id) o.area = fd.area; });
   }
   if (id) Object.assign(list.find(o => o.id === id), item);
@@ -1887,6 +1976,28 @@ document.addEventListener('change', ev => {
     $('#f-deps').innerHTML = depsField(form.dataset.id, keep, ev.target.value);
   }
 });
+document.addEventListener('click', ev => {
+  const lab = ev.target.closest('.sw-custom'); if (!lab) return;
+  const cf = lab.closest('[data-cf]'); cfOpen(cf);
+  if (!lab.querySelector('input').value) ev.preventDefault();
+});
+document.addEventListener('change', ev => {
+  if (ev.target.matches('[data-cf-custom]')) cfOpen(ev.target.closest('[data-cf]'));
+  if (ev.target.name === 'color' && !ev.target.hasAttribute('data-cf-custom')) { const w = ev.target.closest('[data-cf]')?.querySelector('[data-cf-wheel]'); if (w) w.hidden = true; }
+});
+document.addEventListener('input', ev => {
+  const cf = ev.target.closest('[data-cf]'); if (!cf || !cf._hsv) return;
+  if (ev.target.matches('[data-cf-v]')) cfSet(cf, { ...cf._hsv, v: ev.target.value / 100 });
+  if (ev.target.matches('[data-cf-hex]')) { let v = ev.target.value.trim(); if (!v.startsWith('#')) v = '#' + v; if (isHex(v)) cfSet(cf, hexToHsv(v.toLowerCase()), { fromHex: true }); }
+});
+let cfDrag = null;
+document.addEventListener('pointerdown', ev => {
+  const disc = ev.target.closest('[data-cf-disc]'); if (!disc) return;
+  ev.preventDefault(); cfDrag = disc.closest('[data-cf]'); try { disc.setPointerCapture(ev.pointerId); } catch (e) {} cfPick(cfDrag, ev);
+});
+document.addEventListener('pointermove', ev => { if (cfDrag) cfPick(cfDrag, ev); });
+document.addEventListener('pointerup', () => { cfDrag = null; });
+document.addEventListener('pointercancel', () => { cfDrag = null; });
 document.addEventListener('submit', ev => { const f = ev.target.closest('form.f'); if (!f) return; ev.preventDefault(); onSubmit(f); });
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && !modal.hidden) { closeModal(); return; }

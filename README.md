@@ -14,6 +14,8 @@ A calendar and project planner that runs in any browser and works on both phone 
   - Keyboard: focus a bar and press ← or → to shift it a day. Hold Shift to change the due date instead.
   - **Export PDF** (in the Gantt header) downloads the chart as a vector PDF for presentations. Choose a 16:9 slide, A4 or US Letter page, all dates or just what is on screen, and whether to show dependency arrows, the today line, a legend and dates. Long charts continue onto extra pages with the dates repeated. Export works offline in the installed app.
 - Tasks with due dates and project deadlines also appear on the calendar.
+- **Colors**: projects, tasks and events each have a color: 8 presets, or the rainbow swatch for a color wheel (with brightness and a hex code box) for any custom color.
+  Tasks and events default to **Auto** (A), which uses their project's color. Colors show on the calendar, day list, board, Gantt chart and PDF export.
 - **Work and personal**: every project, task and event is marked Work or Personal. Tasks and events in a project follow the project, so changing a project moves everything in it.
   The **All · Work · Personal** switch (sidebar on desktop, top of the screen on mobile) filters the calendar, agenda, projects, Gantt chart, counts and PDF exports. New items default to the side you are viewing. Items without a setting from before this feature count as Work.
 - Light and dark themes follow your system setting.
