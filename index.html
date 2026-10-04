@@ -35,6 +35,8 @@
   --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 
+  --work: #2f5f8f;
+  --personal: #a4476a;
   --r: 10px;
   --tab-h: 62px;
 }
@@ -43,6 +45,7 @@
     --bg: #0e1617; --surface: #152022; --surface-2: #1c2a2c; --line: #2a3b3d;
     --fg: #e2ecec; --muted: #93a6a7; --accent: #4cc2b6; --accent-ink: #062422; --accent-soft: #173836;
     --danger: #ef7d64; --warn: #e2a74c; --ok: #6cc590;
+    --work: #7fb0e0; --personal: #e58fae;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 28px rgba(0,0,0,.35);
     color-scheme: dark;
   }
@@ -51,6 +54,7 @@
   --bg: #0e1617; --surface: #152022; --surface-2: #1c2a2c; --line: #2a3b3d;
   --fg: #e2ecec; --muted: #93a6a7; --accent: #4cc2b6; --accent-ink: #062422; --accent-soft: #173836;
   --danger: #ef7d64; --warn: #e2a74c; --ok: #6cc590;
+  --work: #7fb0e0; --personal: #e58fae;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 28px rgba(0,0,0,.35);
   color-scheme: dark;
 }
@@ -344,6 +348,24 @@ form.f { display: grid; gap: 12px; }
 .datatext { font: 12px/1.4 var(--f-mono); min-height: 140px; }
 .sheet hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 
+.areasw { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
+.areasw button { padding: 7px 6px; font-size: 13px; }
+.areasw button[data-area="work"][aria-pressed="true"] { background: var(--work); color: var(--surface); }
+.areasw button[data-area="personal"][aria-pressed="true"] { background: var(--personal); color: var(--surface); }
+.mtop-area { display: none; }
+.atag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; }
+.atag.work { color: var(--work); background: color-mix(in srgb, var(--work) 14%, var(--surface)); }
+.atag.personal { color: var(--personal); background: color-mix(in srgb, var(--personal) 14%, var(--surface)); }
+.eyebrow .on-work { color: var(--work); } .eyebrow .on-personal { color: var(--personal); }
+.f .area-seg { display: inline-grid; grid-template-columns: 1fr 1fr; min-width: 220px; }
+.f .area-seg label { display: block; position: relative; color: var(--fg); font-weight: 500; font-size: 14px; }
+.f .area-seg input { position: absolute; opacity: 0; inset: 0; width: 100%; margin: 0; cursor: pointer; }
+.f .area-seg span { display: block; padding: 7px 14px; text-align: center; }
+.f .area-seg input:checked + span { background: var(--fg); color: var(--bg); }
+.f .area-seg label:first-child input:checked + span { background: var(--work); color: var(--surface); }
+.f .area-seg label:last-child input:checked + span { background: var(--personal); color: var(--surface); }
+.f .area-seg input:disabled + span { opacity: .55; }
+.f .area-seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
 .syncstat {
   display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; padding: 5px 8px; border-radius: 6px;
   font-size: 12px; color: var(--muted); text-align: left;
@@ -375,7 +397,8 @@ form.f { display: grid; gap: 12px; }
   .app { display: block; }
   .side { display: none; }
   main { padding: 14px 16px calc(var(--tab-h) + 90px + env(safe-area-inset-bottom, 0px)); }
-  .mtop { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 0; }
+  .mtop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px 0; }
+  .mtop-area { display: block; flex-basis: 100%; }
   .tabbar {
     display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
     background: var(--surface); border-top: 1px solid var(--line);
@@ -416,6 +439,7 @@ form.f { display: grid; gap: 12px; }
       <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="4" width="28" height="26" rx="6" fill="var(--accent)"/><path d="M6 19c3-3 6-3 9 0s6 3 11-1" stroke="var(--accent-ink)" stroke-width="2.4" fill="none" stroke-linecap="round"/><rect x="8" y="1.5" width="3" height="6" rx="1.5" fill="var(--fg)"/><rect x="21" y="1.5" width="3" height="6" rx="1.5" fill="var(--fg)"/></svg>
       <span>Tidemark</span>
     </div>
+    <div id="areasw-side"></div>
     <nav class="nav" id="nav"></nav>
     <button class="btn primary block" data-act="quick-add">+ New</button>
     <div class="summary" id="summary"></div>
@@ -430,6 +454,7 @@ form.f { display: grid; gap: 12px; }
         <span>Tidemark</span>
       </div>
       <button class="syncstat" data-act="data"></button>
+      <div class="mtop-area" id="areasw-mob"></div>
     </div>
     <main id="main"></main>
   </div>
@@ -494,7 +519,7 @@ function sample() {
     sample: true,
     projects: [
       { id: p1, name: 'Website relaunch', color: COLORS[0], start: d(-10), due: d(24), notes: 'New landing page, blog migration and analytics.' },
-      { id: p2, name: 'Kitchen renovation', color: COLORS[2], start: d(-3), due: d(45), notes: 'Budget 12,000. Contractor starts once the permit is approved.' },
+      { id: p2, name: 'Kitchen renovation', area: 'personal', color: COLORS[2], start: d(-3), due: d(45), notes: 'Budget 12,000. Contractor starts once the permit is approved.' },
       { id: p3, name: 'Q4 report', color: COLORS[4], start: d(2), due: d(16), notes: '' },
     ],
     tasks: (() => {
@@ -513,15 +538,15 @@ function sample() {
         { id: id.figures, title: 'Collect sales figures', projectId: p3, status: 'todo', priority: 'high', start: d(2), due: d(5) },
         { id: id.slides, title: 'Draft summary slides', projectId: p3, status: 'todo', priority: 'med', start: d(6), due: d(11), deps: [id.figures] },
         { id: id.board, title: 'Present to the board', projectId: p3, status: 'todo', priority: 'high', due: d(16), deps: [id.slides] },
-        { id: uid(), title: 'Renew passport', projectId: '', status: 'todo', priority: 'med', due: d(-2) },
+        { id: uid(), title: 'Renew passport', area: 'personal', projectId: '', status: 'todo', priority: 'med', due: d(-2) },
       ];
     })(),
     events: [
       { id: uid(), title: 'Design review', date: d(0), start: '10:00', end: '11:00', projectId: p1 },
-      { id: uid(), title: 'Dentist', date: d(1), start: '08:30', end: '09:15', projectId: '' },
+      { id: uid(), title: 'Dentist', area: 'personal', date: d(1), start: '08:30', end: '09:15', projectId: '' },
       { id: uid(), title: 'Report kickoff', date: d(2), start: '13:00', end: '13:30', projectId: p3 },
-      { id: uid(), title: 'Contractor site visit', date: d(3), start: '14:00', end: '15:00', projectId: p2 },
-      { id: uid(), title: 'Team offsite', date: d(8), endDate: d(9), start: '', end: '', projectId: '' },
+      { id: uid(), title: 'Contractor site visit', area: 'personal', date: d(3), start: '14:00', end: '15:00', projectId: p2 },
+      { id: uid(), title: 'Team offsite', area: 'work', date: d(8), endDate: d(9), start: '', end: '', projectId: '' },
       { id: uid(), title: 'Launch rehearsal', date: d(22), start: '16:00', end: '17:00', projectId: p1 },
     ],
   };
@@ -531,6 +556,7 @@ function normalize(raw) {
   const str = v => (typeof v === 'string' ? v : '');
   const date = v => (isValidDate(v) ? v : '');
   const num = v => (typeof v === 'number' && isFinite(v) ? v : 0);
+  const area = v => (v === 'personal' ? 'personal' : 'work');
   const deleted = {};
   if (s.deleted && typeof s.deleted === 'object') Object.entries(s.deleted).forEach(([k, v]) => { if (typeof v === 'number') deleted[k] = v; });
   return {
@@ -538,17 +564,17 @@ function normalize(raw) {
     deleted,
     projects: (Array.isArray(s.projects) ? s.projects : []).filter(p => p && p.name).map(p => ({
       id: str(p.id) || uid(), name: str(p.name), color: COLORS.includes(p.color) ? p.color : COLORS[0],
-      start: date(p.start), due: date(p.due), notes: str(p.notes), updated: num(p.updated),
+      start: date(p.start), due: date(p.due), notes: str(p.notes), area: area(p.area), updated: num(p.updated),
     })),
     tasks: (Array.isArray(s.tasks) ? s.tasks : []).filter(t => t && t.title).map(t => ({
       id: str(t.id) || uid(), title: str(t.title), projectId: str(t.projectId),
       status: ['todo', 'doing', 'done'].includes(t.status) ? t.status : 'todo',
       priority: PRI[t.priority] ? t.priority : 'med', start: date(t.start), due: date(t.due), notes: str(t.notes),
-      deps: Array.isArray(t.deps) ? t.deps.filter(v => typeof v === 'string') : [], updated: num(t.updated),
+      deps: Array.isArray(t.deps) ? t.deps.filter(v => typeof v === 'string') : [], area: area(t.area), updated: num(t.updated),
     })),
     events: (Array.isArray(s.events) ? s.events : []).filter(e => e && e.title && isValidDate(e.date)).map(e => ({
       id: str(e.id) || uid(), title: str(e.title), date: e.date, endDate: date(e.endDate),
-      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes), remind: typeof e.remind === 'number' ? e.remind : null, updated: num(e.updated),
+      start: str(e.start), end: str(e.end), projectId: str(e.projectId), notes: str(e.notes), remind: typeof e.remind === 'number' ? e.remind : null, area: area(e.area), updated: num(e.updated),
     })),
   };
 }
@@ -571,28 +597,38 @@ function stamp() {
   snapshot();
 }
 function save() { stamp(); persist(); scheduleSync(); }
-function saveUI() { try { localStorage.setItem(UIKEY, JSON.stringify({ view: ui.view, calMode: ui.calMode, projectId: ui.projectId, zoom: ui.zoom, ganttProject: ui.ganttProject })); } catch (e) {} }
+function saveUI() { try { localStorage.setItem(UIKEY, JSON.stringify({ view: ui.view, calMode: ui.calMode, projectId: ui.projectId, zoom: ui.zoom, ganttProject: ui.ganttProject, area: ui.area })); } catch (e) {} }
 function loadUI() { try { return JSON.parse(localStorage.getItem(UIKEY)) || {}; } catch (e) { return {}; } }
 
 let db = load();
 snapshot();
 const now = new Date();
-const ui = Object.assign({ view: 'calendar', calMode: 'month', projectId: 'all', zoom: 'week', ganttProject: 'all' }, loadUI(), {
+const ui = Object.assign({ view: 'calendar', calMode: 'month', projectId: 'all', zoom: 'week', ganttProject: 'all', area: 'all' }, loadUI(), {
   collapsed: new Set(),
   month: ymd(new Date(now.getFullYear(), now.getMonth(), 1)),
   selected: todayStr(),
   tlStart: ymd(addDays(mondayOf(now), -14)),
 });
 if (!VIEWS.some(v => v[0] === ui.view)) ui.view = 'calendar';
+if (!['all', 'work', 'personal'].includes(ui.area)) ui.area = 'all';
 
 const proj = id => db.projects.find(p => p.id === id);
+// Work / personal: tasks and events in a project follow the project; others carry their own area.
+const AREAS = [['work', 'Work'], ['personal', 'Personal']];
+const areaName = a => (a === 'personal' ? 'Personal' : 'Work');
+const areaOf = o => (o.projectId !== undefined && proj(o.projectId) ? proj(o.projectId).area : o.area);
+const shown = o => ui.area === 'all' || areaOf(o) === ui.area;
+const V = { tasks: () => db.tasks.filter(shown), events: () => db.events.filter(shown), projects: () => db.projects.filter(shown) };
+const defaultArea = () => (ui.area !== 'all' ? ui.area : ui.lastArea || 'work');
+const atag = o => (ui.area === 'all' ? `<span class="atag ${areaOf(o)}">${areaName(areaOf(o))}</span>` : '');
+const areaEyebrow = label => `${label}${ui.area === 'all' ? '' : ` · <span class="on-${ui.area}">${areaName(ui.area)}</span>`}`;
 const colorOf = id => proj(id)?.color || 'var(--muted)';
 const projLabel = id => { const p = proj(id); return p ? `<span class="pdot" style="--c:${p.color}">${esc(p.name)}</span>` : ''; };
 function itemsOn(ds) {
-  const ev = db.events.filter(e => e.date <= ds && ds <= (e.endDate || e.date))
+  const ev = V.events().filter(e => e.date <= ds && ds <= (e.endDate || e.date))
     .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
-  const tk = db.tasks.filter(t => t.due === ds);
-  const dl = db.projects.filter(p => p.due === ds);
+  const tk = V.tasks().filter(t => t.due === ds);
+  const dl = V.projects().filter(p => p.due === ds);
   return { ev, tk, dl };
 }
 const isLate = t => t.status !== 'done' && t.due && t.due < todayStr();
@@ -736,7 +772,7 @@ function syncSection() {
 /* ---------- notifications (Web Push, sent by the reminders GitHub Action) ---------- */
 const PUSH_FILE = 'tidemark-push.json', NOTIFKEY = 'tidemark.notif';
 const SECRETS_URL = 'https://github.com/AvatarOfFear/tidemark-planner/settings/secrets/actions/new';
-const NOTIF_DEFAULTS = { eventDefault: 15, taskTime: '09:00', digest: false, digestTime: '08:00' };
+const NOTIF_DEFAULTS = { eventDefault: 15, taskTime: '09:00', digest: false, digestTime: '08:00', areas: 'both' };
 const REMIND_CHOICES = [[-1, 'No reminder'], [0, 'At start time'], [5, '5 minutes before'], [10, '10 minutes before'], [15, '15 minutes before'], [30, '30 minutes before'], [60, '1 hour before'], [120, '2 hours before'], [1440, '1 day before']];
 let notif = (() => { try { return JSON.parse(localStorage.getItem(NOTIFKEY)) || {}; } catch (e) { return {}; } })();
 const persistNotif = () => { try { localStorage.setItem(NOTIFKEY, JSON.stringify(notif)); } catch (e) {} };
@@ -845,6 +881,7 @@ function notifInner() {
         <label>Event reminders<select id="n-event" name="eventDefault">${REMIND_CHOICES.map(([m, l]) => `<option value="${m}" ${st.eventDefault === m ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Due tasks and deadlines<select id="n-task" name="taskTime">${timeOptions(st.taskTime, `<option value="off" ${st.taskTime === 'off' ? 'selected' : ''}>Off</option>`)}</select></label>
       </div>
+      <label>Send reminders for<select id="n-areas" name="areas">${[['both', 'Work and personal'], ['work', 'Work only'], ['personal', 'Personal only']].map(([k, l]) => `<option value="${k}" ${st.areas === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <div class="two">
         <label class="dep" style="align-self:end"><input type="checkbox" id="n-digest" name="digest" ${st.digest ? 'checked' : ''}><span>Morning summary of the day</span></label>
         <label>Summary time<select id="n-digest-time" name="digestTime">${timeOptions(st.digestTime)}</select></label>
@@ -875,6 +912,8 @@ function render() {
   $('#tabbar').innerHTML = VIEWS.map(([k, n]) =>
     `<button data-act="view" data-view="${k}" ${ui.view === k ? 'aria-current="page"' : ''}>${ICONS[k]}${n}</button>`).join('')
     + `<button data-act="data">${ICONS.data}Settings</button>`;
+  const sw = `<div class="seg areasw" role="group" aria-label="Show plans">${[['all', 'All'], ...AREAS].map(([k, l]) => `<button data-act="area" data-area="${k}" aria-pressed="${ui.area === k}">${l}</button>`).join('')}</div>`;
+  $('#areasw-side').innerHTML = sw; $('#areasw-mob').innerHTML = sw;
   renderSummary();
   const banner = db.sample ? `<div class="banner"><span>These projects, tasks and events are examples so you can see how things work.</span>
     <button class="btn sm" data-act="keep-sample">Keep them</button><button class="btn sm primary" data-act="clear-all">Clear examples and start fresh</button></div>` : '';
@@ -894,9 +933,9 @@ function render() {
 function renderSummary() {
   const t = todayStr();
   const today = itemsOn(t);
-  const late = db.tasks.filter(isLate).length;
+  const late = V.tasks().filter(isLate).length;
   const weekEnd = ymd(addDays(new Date(), 7));
-  const week = db.tasks.filter(x => x.status !== 'done' && x.due && x.due >= t && x.due <= weekEnd).length;
+  const week = V.tasks().filter(x => x.status !== 'done' && x.due && x.due >= t && x.due <= weekEnd).length;
   $('#summary').innerHTML = `<div class="eyebrow" style="padding-left:4px">${esc(fmt(new Date(), { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
     <button class="stat" data-act="goto-today"><span>Today</span><b>${today.ev.length + today.tk.length}</b></button>
     <button class="stat" data-act="goto-agenda"><span>Due next 7 days</span><b>${week}</b></button>
@@ -920,7 +959,7 @@ function renderCalendar() {
     ? `Weeks ${isoWeek(m)}–${isoWeek(new Date(m.getFullYear(), m.getMonth() + 1, 0))}`
     : 'Everything coming up in the next 60 days';
   return `<header class="vh">
-      <div><div class="eyebrow">Calendar</div><h1>${isMonth ? esc(fmt(m, { month: 'long', year: 'numeric' })) : 'Agenda'}</h1><p class="sub">${sub}</p></div>
+      <div><div class="eyebrow">${areaEyebrow('Calendar')}</div><h1>${isMonth ? esc(fmt(m, { month: 'long', year: 'numeric' })) : 'Agenda'}</h1><p class="sub">${sub}</p></div>
       <div class="controls">
         <div class="seg" role="group" aria-label="Calendar layout">
           <button data-act="cal-mode" data-mode="month" aria-pressed="${isMonth}">Month</button>
@@ -968,13 +1007,13 @@ function itemRows(ds, { ev, tk, dl }) {
   const rows = [];
   dl.forEach(p => rows.push(`<li class="item"><span class="when">Deadline</span><div class="what">
     <button class="t" data-act="edit-project" data-id="${p.id}">${esc(p.name)} is due</button>
-    <div class="meta"><span class="pdot" style="--c:${p.color}">Project</span></div></div></li>`));
+    <div class="meta"><span class="pdot" style="--c:${p.color}">Project</span>${atag(p)}</div></div></li>`));
   ev.forEach(e => {
     const multi = e.endDate && e.endDate !== e.date;
     const when = e.start ? `${e.start}${e.end ? `<br>${e.end}` : ''}` : 'All day';
     rows.push(`<li class="item"><span class="when">${when}</span><div class="what">
       <button class="t" data-act="edit-event" data-id="${e.id}">${esc(e.title)}</button>
-      <div class="meta">${projLabel(e.projectId)}${multi ? `<span>${shortDate(e.date)} – ${shortDate(e.endDate)}</span>` : ''}${e.notes ? `<span>${esc(e.notes.slice(0, 80))}</span>` : ''}</div></div></li>`);
+      <div class="meta">${atag(e)}${projLabel(e.projectId)}${multi ? `<span>${shortDate(e.date)} – ${shortDate(e.endDate)}</span>` : ''}${e.notes ? `<span>${esc(e.notes.slice(0, 80))}</span>` : ''}</div></div></li>`);
   });
   tk.forEach(x => rows.push(taskRow(x)));
   return rows.join('');
@@ -983,7 +1022,7 @@ function taskRow(x, showDue) {
   const done = x.status === 'done';
   return `<li class="item task ${done ? 'done' : ''}"><span class="when"><button class="check ${done ? 'on' : ''}" style="--c:${colorOf(x.projectId)}" data-act="toggle-task" data-id="${x.id}" aria-label="${done ? 'Mark not done' : 'Mark done'}: ${esc(x.title)}"></button></span><div class="what">
     <button class="t" data-act="edit-task" data-id="${x.id}">${esc(x.title)}</button>
-    <div class="meta">${projLabel(x.projectId)}<span>${STATUS.find(s => s[0] === x.status)[1]}</span>${showDue && x.due ? `<span class="${isLate(x) ? 'late' : ''}">Due ${relDays(x.due)}</span>` : ''}</div></div></li>`;
+    <div class="meta">${atag(x)}${projLabel(x.projectId)}<span>${STATUS.find(s => s[0] === x.status)[1]}</span>${showDue && x.due ? `<span class="${isLate(x) ? 'late' : ''}">Due ${relDays(x.due)}</span>` : ''}</div></div></li>`;
 }
 
 function renderDayPanel() {
@@ -1000,7 +1039,7 @@ function renderDayPanel() {
 
 function renderAgenda() {
   const t = todayStr();
-  const late = db.tasks.filter(isLate).sort((a, b) => a.due.localeCompare(b.due));
+  const late = V.tasks().filter(isLate).sort((a, b) => a.due.localeCompare(b.due));
   let h = '<div class="agenda">';
   if (late.length) h += `<section class="overdue"><h3>Overdue <span class="mono">${late.length} task${late.length === 1 ? '' : 's'}</span></h3><ul class="items">${late.map(x => taskRow(x, true)).join('')}</ul></section>`;
   let any = false;
@@ -1010,7 +1049,7 @@ function renderAgenda() {
     any = true;
     h += `<section><h3>${esc(i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : fmt(d, { weekday: 'long' }))} <span class="mono">${esc(fmt(d, { day: 'numeric', month: 'short' }))} · W${isoWeek(d)}</span></h3><ul class="items">${itemRows(ds, it)}</ul></section>`;
   }
-  const undated = db.tasks.filter(x => !x.due && x.status !== 'done');
+  const undated = V.tasks().filter(x => !x.due && x.status !== 'done');
   if (undated.length) h += `<section><h3>No due date <span class="mono">${undated.length}</span></h3><ul class="items">${undated.map(x => taskRow(x)).join('')}</ul></section>`;
   if (!any && !late.length && !undated.length) h += '<p class="empty">Nothing in the next 60 days. Use + New to add an event or task.</p>';
   return h + '</div>';
@@ -1031,21 +1070,21 @@ function dueBadge(ds, finished) {
 }
 
 function renderProjects() {
-  const sel = ui.projectId === 'all' || ui.projectId === 'none' || proj(ui.projectId) ? ui.projectId : 'all';
+  const sel = ui.projectId === 'all' || ui.projectId === 'none' || (proj(ui.projectId) && shown(proj(ui.projectId))) ? ui.projectId : 'all';
   ui.projectId = sel;
-  const open = db.tasks.filter(x => x.status !== 'done').length;
+  const open = V.tasks().filter(x => x.status !== 'done').length;
   const cards = [`<button class="pcard" data-act="pick-project" data-id="all" aria-pressed="${sel === 'all'}" style="--c:var(--fg)">
-      <h3>All tasks</h3><div class="row"><span>${db.projects.length} project${db.projects.length === 1 ? '' : 's'}</span><span class="mono">${open} open</span></div></button>`];
-  db.projects.slice().sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).forEach(p => {
+      <h3>${ui.area === 'all' ? 'All tasks' : `All ${ui.area} tasks`}</h3><div class="row"><span>${V.projects().length} project${V.projects().length === 1 ? '' : 's'}</span><span class="mono">${open} open</span></div></button>`];
+  V.projects().slice().sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).forEach(p => {
     const s = projStats(p);
     cards.push(`<button class="pcard" data-act="pick-project" data-id="${p.id}" aria-pressed="${sel === p.id}" style="--c:${p.color}">
-      <h3>${esc(p.name)}</h3>
+      <h3>${esc(p.name)}</h3>${ui.area === 'all' ? `<div>${atag(p)}</div>` : ''}
       <div class="bar" aria-hidden="true"><i style="width:${s.pct}%"></i></div>
       <div class="row"><span class="mono">${s.done}/${s.total} done</span>${dueBadge(p.due, s.total && s.done === s.total)}</div></button>`);
   });
 
   const p = proj(sel);
-  const tasks = db.tasks.filter(x => sel === 'all' ? true : sel === 'none' ? !x.projectId : x.projectId === sel);
+  const tasks = V.tasks().filter(x => sel === 'all' ? true : sel === 'none' ? !x.projectId : x.projectId === sel);
   const detail = p ? `<div class="pdetail">
       <span class="pdot mono" style="--c:${p.color}">${p.start ? shortDate(p.start) : '—'} → ${p.due ? shortDate(p.due) : '—'}</span>
       ${p.notes ? `<p>${esc(p.notes)}</p>` : ''}
@@ -1064,14 +1103,14 @@ function renderProjects() {
           <div class="meta">
             ${x.priority !== 'low' || k !== 'done' ? `<span class="pill ${x.priority}">${PRI[x.priority]}</span>` : ''}
             ${x.due ? `<span class="${isLate(x) ? 'late' : ''}">${isLate(x) ? 'Overdue · ' : ''}${x.start && x.start !== x.due ? `${shortDate(x.start)} → ` : ''}${shortDate(x.due)}</span>` : ''}
-            ${sel === 'all' ? projLabel(x.projectId) : ''}
+            ${sel === 'all' ? projLabel(x.projectId) : ''}${sel === 'all' && !proj(x.projectId) ? atag(x) : ''}
             <button class="move" data-act="move-task" data-id="${x.id}" data-to="${next ? next[0] : 'todo'}">${next ? `${next[1]} →` : 'Reopen'}</button>
           </div></article>`).join('')}</div>
       <button class="addt" data-act="new-task" data-status="${k}">+ Add task</button>
     </section>`;
   }).join('');
 
-  return `<header class="vh"><div><div class="eyebrow">Projects</div><h1>${p ? esc(p.name) : 'All tasks'}</h1>
+  return `<header class="vh"><div><div class="eyebrow">${areaEyebrow('Projects')}</div><h1>${p ? esc(p.name) : 'All tasks'}</h1>
       <p class="sub">${p ? `${projStats(p).pct}% complete` : 'Drag cards between columns, or use the arrow on each card.'}</p></div>
       <div class="controls"><button class="btn" data-act="pick-project" data-id="none" aria-pressed="${sel === 'none'}">Tasks without a project</button><button class="btn primary" data-act="new-project">+ New project</button></div></header>
     <div class="pgrid">${cards.join('')}</div>${detail}<div class="board">${cols}</div>`;
@@ -1091,15 +1130,15 @@ function projSpan(p) {
   if (!sp.length) return null;
   return { s: sp.map(x => x.s).sort()[0], e: sp.map(x => x.e).sort().pop(), derived: true };
 }
-const tasksOf = pid => db.tasks.filter(t => (pid ? t.projectId === pid : !proj(t.projectId)))
+const tasksOf = pid => V.tasks().filter(t => (pid ? t.projectId === pid : !proj(t.projectId)))
   .sort((a, b) => ((taskSpan(a)?.s || '9999').localeCompare(taskSpan(b)?.s || '9999')) || ((a.due || '9999').localeCompare(b.due || '9999')));
-const ganttScope = () => (ui.ganttProject === 'all' || ui.ganttProject === 'none' || proj(ui.ganttProject) ? ui.ganttProject : 'all');
+const ganttScope = () => (ui.ganttProject === 'all' || ui.ganttProject === 'none' || (proj(ui.ganttProject) && shown(proj(ui.ganttProject))) ? ui.ganttProject : 'all');
 const progressOf = t => (t.status === 'done' ? 100 : t.status === 'doing' ? 50 : 0);
 
 function ganttBounds(sel) {
   const spans = [];
-  db.projects.filter(p => sel === 'all' || p.id === sel).forEach(p => { const sp = projSpan(p); if (sp) spans.push(sp); });
-  db.tasks.filter(t => sel === 'all' || (sel === 'none' ? !proj(t.projectId) : t.projectId === sel)).forEach(t => { const sp = taskSpan(t); if (sp) spans.push(sp); });
+  V.projects().filter(p => sel === 'all' || p.id === sel).forEach(p => { const sp = projSpan(p); if (sp) spans.push(sp); });
+  V.tasks().filter(t => sel === 'all' || (sel === 'none' ? !proj(t.projectId) : t.projectId === sel)).forEach(t => { const sp = taskSpan(t); if (sp) spans.push(sp); });
   if (!spans.length) return null;
   return { min: spans.map(x => x.s).sort()[0], max: spans.map(x => x.e).sort().pop() };
 }
@@ -1112,7 +1151,7 @@ function fitGantt() {
 }
 function ganttRows(sel) {
   const rows = [];
-  db.projects.filter(p => sel === 'all' || p.id === sel)
+  V.projects().filter(p => sel === 'all' || p.id === sel)
     .sort((a, b) => (projSpan(a)?.s || '9999').localeCompare(projSpan(b)?.s || '9999'))
     .forEach(p => { rows.push({ type: 'proj', p }); if (!ui.collapsed.has(p.id)) tasksOf(p.id).forEach(t => rows.push({ type: 'task', t })); });
   if (sel === 'all' || sel === 'none') {
@@ -1201,7 +1240,7 @@ function renderGantt() {
   const todayLine = t0 >= s && t0 <= ymd(end) ? `<div class="gt-today" style="left:calc(var(--lab) + ${x(t0) + dw / 2}px)"></div>` : '';
   const conflicts = (links.match(/class="bad"/g) || []).length;
   const opts = `<option value="all" ${sel === 'all' ? 'selected' : ''}>All projects</option>`
-    + db.projects.map(p => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')
+    + V.projects().map(p => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')
     + `<option value="none" ${sel === 'none' ? 'selected' : ''}>Tasks without a project</option>`;
   const title = sel === 'all' ? 'All projects' : sel === 'none' ? 'Tasks without a project' : proj(sel).name;
 
@@ -1215,10 +1254,10 @@ function renderGantt() {
           ${links}</svg>
         ${todayLine}
       </div></div>`
-    : `<div class="gt-wrap"><div class="gt-empty"><p style="margin:0">${db.projects.length ? 'Nothing to chart here yet.' : 'You have no projects yet.'} Create a project, then add tasks with start and due dates. Each project gets its own Gantt chart.</p>
+    : `<div class="gt-wrap"><div class="gt-empty"><p style="margin:0">${V.projects().length ? 'Nothing to chart here yet.' : 'You have no projects yet.'} Create a project, then add tasks with start and due dates. Each project gets its own Gantt chart.</p>
         <div class="controls"><button class="btn primary" data-act="new-project">+ New project</button><button class="btn" data-act="new-task">+ Task</button></div></div></div>`;
 
-  return `<header class="vh"><div><div class="eyebrow">Gantt chart</div><h1>${esc(title)}</h1>
+  return `<header class="vh"><div><div class="eyebrow">${areaEyebrow('Gantt chart')}</div><h1>${esc(title)}</h1>
       <p class="sub">${esc(fmt(start, { day: 'numeric', month: 'short' }))} – ${esc(fmt(end, { day: 'numeric', month: 'short', year: 'numeric' }))}${conflicts ? ` · <span class="late">${conflicts} scheduling conflict${conflicts === 1 ? '' : 's'}</span>` : ''}</p></div>
       <div class="controls">
         <select class="gt-select" id="gt-project" aria-label="Chart">${opts}</select>
@@ -1288,7 +1327,7 @@ function loadJsPDF() {
 function pdfDialog() {
   if (!canSync) { toast(`PDF export works in the app at ${SITE.replace('https://', '')}`); return; }
   const sel = ganttScope(), b = ganttBounds(sel), pr = pdfPrefs();
-  const title = sel === 'all' ? 'Project timeline' : sel === 'none' ? 'Tasks without a project' : proj(sel).name;
+  const title = sel === 'all' ? (ui.area === 'all' ? 'Project timeline' : `${areaName(ui.area)} projects`) : sel === 'none' ? 'Tasks without a project' : proj(sel).name;
   const vs = ui.tlStart, ve = ymd(addDays(parse(ui.tlStart), (ZOOM[ui.zoom] || ZOOM.week).days - 1));
   const chk = (name, label, def = true) => `<label class="dep"><input type="checkbox" id="p-${name}" name="${name}" ${(pr[name] ?? def) ? 'checked' : ''}><span>${label}</span></label>`;
   openModal(`<h2>Export Gantt chart as PDF</h2>
@@ -1351,7 +1390,7 @@ async function exportGanttPdf(o) {
 
   // header numbers
   const taskRows = rows.filter(r => r.type === 'task').map(r => r.t);
-  const allTasks = db.tasks.filter(t => sel === 'all' || (sel === 'none' ? !proj(t.projectId) : t.projectId === sel));
+  const allTasks = V.tasks().filter(t => sel === 'all' || (sel === 'none' ? !proj(t.projectId) : t.projectId === sel));
   const doneN = allTasks.filter(t => t.status === 'done').length;
   const lateN = allTasks.filter(isLate).length;
   const meta = [`${shortDate(s)} - ${fmt(parse(e), { day: 'numeric', month: 'short', year: 'numeric' })}`, `${allTasks.length} task${allTasks.length === 1 ? '' : 's'}`,
@@ -1549,7 +1588,17 @@ function toast(msg) {
   const el = $('#toast'); el.textContent = msg; el.hidden = false;
   clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2200);
 }
-const projOptions = sel => `<option value="">No project</option>` + db.projects.map(p => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+const projOptions = sel => `<option value="">No project</option>` + AREAS.map(([k, l]) => {
+  const ps = db.projects.filter(p => p.area === k);
+  return ps.length ? `<optgroup label="${l}">${ps.map(p => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</optgroup>` : '';
+}).join('');
+function areaField(o, kind) {
+  const p = kind !== 'project' && proj(o.projectId);
+  const val = p ? p.area : o.area || defaultArea();
+  return `<div id="f-areabox"><div class="eyebrow" style="margin-bottom:6px">Work or personal</div>
+    <div class="seg area-seg" role="radiogroup" aria-label="Work or personal">${AREAS.map(([k, l]) => `<label><input type="radio" name="area" value="${k}" ${val === k ? 'checked' : ''} ${p ? 'disabled' : ''}><span>${l}</span></label>`).join('')}</div>
+    ${p ? `<p class="hint" style="margin:6px 0 0">Set by the project ${esc(p.name)}.</p>` : kind === 'project' ? '<p class="hint" style="margin:6px 0 0">Tasks and events in this project follow this setting.</p>' : ''}</div>`;
+}
 const actions = (kind, id, extra = '') => `<div class="actions">${id ? `<button type="button" class="btn danger" data-act="delete" data-kind="${kind}" data-id="${id}">Delete</button>` : ''}${extra}
   <span class="grow"></span><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div>`;
 
@@ -1564,6 +1613,7 @@ function eventForm(e) {
     <p class="hint">Leave the times empty for an all-day event.</p>
     <label>Reminder<select id="f-remind" name="remind">${remindOptions(e.remind)}</select></label>
     <label>Project<select id="f-project" name="projectId">${projOptions(e.projectId)}</select></label>
+    ${areaField(e, 'event')}
     <label>Notes<textarea id="f-notes" name="notes" rows="3">${esc(e.notes)}</textarea></label>
     ${actions('event', e.id)}
   </form>`;
@@ -1580,6 +1630,7 @@ function taskForm(x) {
   <form class="f" data-kind="task" data-id="${x.id || ''}">
     <label>Task<input id="f-title" name="title" required maxlength="140" value="${esc(x.title)}" placeholder="e.g. Send invoice"></label>
     <label>Project<select id="f-project" name="projectId">${projOptions(x.projectId)}</select></label>
+    ${areaField(x, 'task')}
     <div class="two"><label>Start date<input id="f-tstart" type="date" name="start" value="${esc(x.start)}"></label>
       <label>Due date<input id="f-due" type="date" name="due" value="${esc(x.due)}"></label></div>
     <p class="hint">Give a start and due date to show this task as a bar on the Gantt chart. A due date alone shows it as a milestone.</p>
@@ -1596,6 +1647,7 @@ function projectForm(p) {
     <label>Name<input id="f-title" name="name" required maxlength="80" value="${esc(p.name)}" placeholder="e.g. Garden makeover"></label>
     <div class="two"><label>Start<input id="f-start" type="date" name="start" value="${esc(p.start)}"></label>
       <label>Deadline<input id="f-due" type="date" name="due" value="${esc(p.due)}"></label></div>
+    ${areaField(p, 'project')}
     <div><div class="eyebrow" style="margin-bottom:6px">Color</div><div class="swatches">${COLORS.map((c, i) => `<label><input type="radio" name="color" value="${c}" ${p.color === c ? 'checked' : ''} aria-label="Color ${i + 1}"><span style="--c:${c}"></span></label>`).join('')}</div></div>
     <label>Notes<textarea id="f-notes" name="notes" rows="3">${esc(p.notes)}</textarea></label>
     ${p.id ? '<p class="hint" style="margin:0">Deleting a project keeps its tasks and events; they become unassigned.</p>' : ''}
@@ -1604,17 +1656,17 @@ function projectForm(p) {
 }
 
 function defaultDate() { return ui.view === 'calendar' && ui.calMode === 'month' ? ui.selected : todayStr(); }
-function newEvent(date) { openModal(eventForm({ title: '', date: date || defaultDate(), endDate: '', start: '', end: '', projectId: ui.view === 'projects' && proj(ui.projectId) ? ui.projectId : '', notes: '' })); }
+function newEvent(date) { openModal(eventForm({ title: '', date: date || defaultDate(), endDate: '', start: '', end: '', projectId: ui.view === 'projects' && proj(ui.projectId) ? ui.projectId : '', notes: '', area: defaultArea() })); }
 function newTask(o = {}) {
   const ctx = ui.view === 'timeline' ? ui.ganttProject : ui.projectId;
   const projectId = o.projectId ?? (proj(ctx) ? ctx : '');
   const inGantt = ui.view === 'timeline';
-  openModal(taskForm({ title: '', projectId, status: o.status || 'todo', priority: 'med', deps: [],
+  openModal(taskForm({ title: '', projectId, area: defaultArea(), status: o.status || 'todo', priority: 'med', deps: [],
     start: inGantt ? todayStr() : '', due: o.due || (inGantt ? ymd(addDays(new Date(), 4)) : ''), notes: '' }));
 }
 function newProject() {
   const used = new Set(db.projects.map(p => p.color));
-  openModal(projectForm({ name: '', color: COLORS.find(c => !used.has(c)) || COLORS[db.projects.length % COLORS.length], start: todayStr(), due: '', notes: '' }));
+  openModal(projectForm({ name: '', color: COLORS.find(c => !used.has(c)) || COLORS[db.projects.length % COLORS.length], start: todayStr(), due: '', notes: '', area: defaultArea() }));
 }
 
 function onSubmit(form) {
@@ -1622,7 +1674,7 @@ function onSubmit(form) {
     const f = new FormData(form), btn = form.querySelector('[type=submit]');
     notifAction(btn, 'Saving…', async () => {
       const p = await readPush();
-      p.settings = { ...p.settings, eventDefault: Number(f.get('eventDefault')), taskTime: f.get('taskTime'), digest: f.has('digest'), digestTime: f.get('digestTime'), tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
+      p.settings = { ...p.settings, eventDefault: Number(f.get('eventDefault')), taskTime: f.get('taskTime'), digest: f.has('digest'), digestTime: f.get('digestTime'), areas: f.get('areas') || 'both', tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
       await writePush(p); notif.settings = p.settings; persistNotif();
     }, 'Reminder settings saved');
     return;
@@ -1643,7 +1695,8 @@ function onSubmit(form) {
   if (kind === 'event') {
     if (fd.endDate && fd.endDate <= fd.date) fd.endDate = '';
     if (fd.end && (!fd.start || fd.end <= fd.start)) fd.end = '';
-    list = db.events; item = { title: fd.title, date: fd.date, endDate: fd.endDate, start: fd.start, end: fd.end, projectId: fd.projectId, notes: fd.notes, remind: fd.remind === '' || fd.remind === undefined ? null : Number(fd.remind) };
+    fd.area = proj(fd.projectId)?.area || (fd.area === 'personal' ? 'personal' : 'work');
+    list = db.events; item = { area: fd.area, title: fd.title, date: fd.date, endDate: fd.endDate, start: fd.start, end: fd.end, projectId: fd.projectId, notes: fd.notes, remind: fd.remind === '' || fd.remind === undefined ? null : Number(fd.remind) };
   } else if (kind === 'task') {
     const deps = fd.projectId ? raw.getAll('deps').filter(d => db.tasks.some(t => t.id === d && t.projectId === fd.projectId)) : [];
     if (!fd.start && deps.length) {
@@ -1652,15 +1705,21 @@ function onSubmit(form) {
       if (fd.start && fd.due && fd.due < fd.start) fd.due = '';
     }
     if (fd.start && fd.due && fd.due < fd.start) { const t = fd.start; fd.start = fd.due; fd.due = t; }
-    list = db.tasks; item = { title: fd.title, projectId: fd.projectId, start: fd.start, due: fd.due, deps, status: fd.status, priority: fd.priority, notes: fd.notes };
+    fd.area = proj(fd.projectId)?.area || (fd.area === 'personal' ? 'personal' : 'work');
+    list = db.tasks; item = { area: fd.area, title: fd.title, projectId: fd.projectId, start: fd.start, due: fd.due, deps, status: fd.status, priority: fd.priority, notes: fd.notes };
   } else {
     if (fd.start && fd.due && fd.due < fd.start) { const s = fd.start; fd.start = fd.due; fd.due = s; }
-    list = db.projects; item = { name: fd.name, color: fd.color || COLORS[0], start: fd.start, due: fd.due, notes: fd.notes };
+    fd.area = fd.area === 'personal' ? 'personal' : 'work';
+    list = db.projects; item = { name: fd.name, color: fd.color || COLORS[0], start: fd.start, due: fd.due, notes: fd.notes, area: fd.area };
+    if (id) [...db.tasks, ...db.events].forEach(o => { if (o.projectId === id) o.area = fd.area; });
   }
   if (id) Object.assign(list.find(o => o.id === id), item);
   else { item.id = uid(); list.push(item); if (kind === 'project' && ui.view === 'projects') ui.projectId = item.id; }
   if (kind === 'event' && ui.view === 'calendar') { ui.selected = item.date; ui.month = ui.month.slice(0, 8) === item.date.slice(0, 8) ? ui.month : item.date.slice(0, 8) + '01'; }
-  save(); closeModal(); render(); toast(id ? 'Saved' : `${kind[0].toUpperCase() + kind.slice(1)} added`);
+  ui.lastArea = fd.area;
+  const saved = id ? list.find(o => o.id === id) : item;
+  save(); closeModal(); render();
+  toast(!shown(saved) ? `Saved to ${areaName(areaOf(saved))}. Switch to ${areaName(areaOf(saved))} or All to see it.` : id ? 'Saved' : `${kind[0].toUpperCase() + kind.slice(1)} added`);
 }
 
 function dataSheet() {
@@ -1702,6 +1761,7 @@ document.addEventListener('click', ev => {
   if (!el) return;
   const act = el.dataset.act, id = el.dataset.id;
   switch (act) {
+    case 'area': ui.area = el.dataset.area; saveUI(); render(); break;
     case 'view': ui.view = el.dataset.view; ui.gtScroll = 'today'; saveUI(); render(); window.scrollTo(0, 0); break;
     case 'cal-mode': ui.calMode = el.dataset.mode; saveUI(); render(); break;
     case 'prev': case 'next': {
@@ -1816,6 +1876,11 @@ document.addEventListener('click', ev => {
 });
 document.addEventListener('change', ev => {
   if (ev.target.id === 'gt-project') { ui.ganttProject = ev.target.value; fitGantt(); ui.gtScroll = 'start'; saveUI(); render(); return; }
+  const aform = ev.target.closest('form.f[data-kind="task"], form.f[data-kind="event"]');
+  if (aform && ev.target.id === 'f-project') {
+    const cur = aform.querySelector('input[name=area]:checked')?.value;
+    $('#f-areabox').outerHTML = areaField({ projectId: ev.target.value, area: cur }, aform.dataset.kind);
+  }
   const form = ev.target.closest('form.f[data-kind="task"]');
   if (form && ev.target.id === 'f-project') {
     const keep = [...form.querySelectorAll('input[name=deps]:checked')].map(i => i.value);

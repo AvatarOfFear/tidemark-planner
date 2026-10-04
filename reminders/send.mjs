@@ -15,7 +15,7 @@ const PUSH_FILE = 'tidemark-push.json';
 const SITE = 'https://avataroffear.github.io/tidemark-planner/';
 const LOOKBACK = 3 * 3600e3; // send reminders up to 3 h late if a run was delayed
 const LEAD = 3 * 60e3; // and up to 3 min early, since scheduled runs are usually a little late
-const DEFAULTS = { eventDefault: 15, taskTime: '09:00', digest: false, digestTime: '08:00' };
+const DEFAULTS = { eventDefault: 15, taskTime: '09:00', digest: false, digestTime: '08:00', areas: 'both' };
 
 async function gh(method, path, body) {
   const res = await fetch(API + path, {
@@ -68,11 +68,15 @@ export function dueReminders(data, settings, tz, now) {
   const out = [];
   const projects = new Map((data.projects || []).map(p => [p.id, p]));
   const pname = id => projects.get(id)?.name;
+  // Work / personal filter: items in a project follow the project's area.
+  const areaOf = o => (o.projectId && projects.get(o.projectId)?.area) || o.area || 'work';
+  const keep = o => !s.areas || s.areas === 'both' || areaOf(o) === s.areas;
+  const events = (data.events || []).filter(keep), tasks = (data.tasks || []).filter(keep), projs = (data.projects || []).filter(p => keep({ area: p.area }));
   const add = (key, at, msg) => { if (at <= now + LEAD && at > now - LOOKBACK) out.push({ key, at, ...msg }); };
   const today = localDate(now, tz);
   const days = [-1, 0, 1, 2].map(n => addDays(today, n));
 
-  for (const e of data.events || []) {
+  for (const e of events) {
     const remind = e.remind === null || e.remind === undefined ? s.eventDefault : e.remind;
     if (remind < 0 || !days.includes(e.date) && !(e.date > today && e.date <= addDays(today, 8))) continue;
     if (e.start) {
@@ -90,22 +94,22 @@ export function dueReminders(data, settings, tz, now) {
     }
   }
   if (s.taskTime !== 'off') {
-    for (const t of data.tasks || []) {
+    for (const t of tasks) {
       if (t.status === 'done' || !t.due || !days.includes(t.due)) continue;
       add(`task:${t.id}:${t.due}`, zonedTime(t.due, s.taskTime, tz), {
         title: `Due today: ${t.title}`, body: [pname(t.projectId), t.priority === 'high' ? 'High priority' : ''].filter(Boolean).join(' · ') || 'Task',
       });
     }
-    for (const p of data.projects || []) {
+    for (const p of projs) {
       if (!p.due || !days.includes(p.due)) continue;
       add(`project:${p.id}:${p.due}`, zonedTime(p.due, s.taskTime, tz), { title: `Deadline today: ${p.name}`, body: 'Project deadline' });
     }
   }
   if (s.digest) {
     const at = zonedTime(today, s.digestTime, tz);
-    const ev = (data.events || []).filter(e => e.date <= today && today <= (e.endDate || e.date));
-    const due = (data.tasks || []).filter(t => t.status !== 'done' && t.due === today);
-    const late = (data.tasks || []).filter(t => t.status !== 'done' && t.due && t.due < today);
+    const ev = events.filter(e => e.date <= today && today <= (e.endDate || e.date));
+    const due = tasks.filter(t => t.status !== 'done' && t.due === today);
+    const late = tasks.filter(t => t.status !== 'done' && t.due && t.due < today);
     const first = ev.filter(e => e.start).sort((a, b) => a.start.localeCompare(b.start))[0];
     const parts = [ev.length ? plural(ev.length, 'event') : 'No events', due.length ? `${plural(due.length, 'task')} due` : '', late.length ? `${late.length} overdue` : ''].filter(Boolean);
     add(`digest:${today}`, at, { title: 'Your day in Tidemark', body: parts.join(' · ') + (first ? `. First up: ${first.start} ${first.title}` : '') });
