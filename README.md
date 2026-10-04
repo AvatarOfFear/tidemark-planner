@@ -14,6 +14,8 @@ A calendar and project planner that runs in any browser and works on both phone 
   - Keyboard: focus a bar and press ← or → to shift it a day. Hold Shift to change the due date instead.
   - **Export PDF** (in the Gantt header) downloads the chart as a vector PDF for presentations. Choose a 16:9 slide, A4 or US Letter page, all dates or just what is on screen, and whether to show dependency arrows, the today line, a legend and dates. Long charts continue onto extra pages with the dates repeated. Export works offline in the installed app.
 - Tasks with due dates and project deadlines also appear on the calendar.
+- **Work and personal**: every project, task and event is marked Work or Personal. Tasks and events in a project follow the project, so changing a project moves everything in it.
+  The **All · Work · Personal** switch (sidebar on desktop, top of the screen on mobile) filters the calendar, agenda, projects, Gantt chart, counts and PDF exports. New items default to the side you are viewing. Items without a setting from before this feature count as Work.
 - Light and dark themes follow your system setting.
 - **Offline and installable**: when served over HTTPS it registers a service worker, so you can "Add to Home Screen" on a phone or "Install app" in Chrome/Edge on desktop.
 
@@ -50,6 +52,7 @@ Setup:
 Good to know:
 - GitHub runs scheduled workflows on a best-effort basis, so reminders can occasionally arrive a few minutes late. Reminders are sent up to 3 minutes early and up to 3 hours late, never twice.
 - Settings → Notifications shows when the reminder service last ran, and any error it hit.
+- **Send reminders for** chooses Work and personal, Work only or Personal only (shared by all your devices).
 - GitHub pauses scheduled workflows in public repos after 60 days without commits; the workflow makes a tiny monthly commit (`.github/keepalive`) to prevent that.
 - The push keys and subscriptions are stored in your secret gist alongside your planner data.
 
