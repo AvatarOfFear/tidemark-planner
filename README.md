@@ -13,7 +13,7 @@ A calendar and project planner that runs in any browser and works on both phone 
   - Zoom by days, weeks or months. **Fit** frames the chart around the selected project.
   - Keyboard: focus a bar and press ← or → to shift it a day. Hold Shift to change the due date instead.
   - **Reorder projects** by dragging the ⠿ handle on a project row up or down (mouse or touch), or focus it and press ↑ / ↓. The project's tasks move with it. The order syncs across devices and is used in PDF exports.
-  - **Export PDF** (in the Gantt header) downloads the chart as a vector PDF for presentations. Choose a 16:9 slide, A4 or US Letter page, all dates or just what is on screen, and whether to show dependency arrows, the today line, a legend and dates. Long charts continue onto extra pages with the dates repeated. Export works offline in the installed app.
+  - **Export PDF** (in the Gantt header) downloads the chart as a vector PDF for presentations. Choose a 16:9 slide, A4 or US Letter page, all dates or just what is on screen, and whether to show dependency arrows, the today line, a legend and dates. Everything is scaled to fit on one page (the PDF is vector, so zoom in on very large charts to read details). Export works offline in the installed app.
 - Tasks with due dates and project deadlines also appear on the calendar.
 - **Colors**: projects, tasks and events each have a color: 8 presets, or the rainbow swatch for a color wheel (with brightness and a hex code box) for any custom color.
   Tasks and events default to **Auto** (A), which uses their project's color. Colors show on the calendar, day list, board, Gantt chart and PDF export.
