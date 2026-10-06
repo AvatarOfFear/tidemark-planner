@@ -1549,7 +1549,6 @@ function pdfDialog() {
 const PC = { fg: [19, 36, 38], muted: [96, 112, 114], line: [221, 230, 230], soft: [241, 245, 245], wkend: [246, 249, 249], danger: [190, 58, 34], white: [255, 255, 255] };
 const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const tint = (h, t) => hexRgb(h).map(c => Math.round(c + (255 - c) * t));
-const shade = (h, t) => hexRgb(h).map(c => Math.round(c * (1 - t)));
 function pdfText(v) {
   return String(v ?? '').normalize('NFC')
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/…/g, '...').replace(/→/g, '->')
@@ -1593,10 +1592,9 @@ async function exportGanttPdf(o) {
   // header numbers
   const taskRows = rows.filter(r => r.type === 'task').map(r => r.t);
   const allTasks = V.tasks().filter(t => sel === 'all' || (sel === 'none' ? !proj(t.projectId) : t.projectId === sel));
-  const doneN = allTasks.filter(t => t.status === 'done').length;
   const lateN = allTasks.filter(isLate).length;
   const meta = [`${shortDate(s)} - ${fmt(parse(e), { day: 'numeric', month: 'short', year: 'numeric' })}`, `${allTasks.length} task${allTasks.length === 1 ? '' : 's'}`,
-    `${allTasks.length ? Math.round(doneN / allTasks.length * 100) : 0}% complete`, lateN ? `${lateN} overdue` : ''].filter(Boolean).join('   ·   ');
+    lateN ? `${lateN} overdue` : ''].filter(Boolean).join('   ·   ');
 
   const spanOf = r => (r.type === 'proj' ? projSpan(r.p) : r.type === 'task' ? taskSpan(r.t) : null);
   const clampX = (a, bEnd) => [Math.max(x0, a), Math.min(x0 + tlW, bEnd)];
@@ -1665,16 +1663,12 @@ async function exportGanttPdf(o) {
         const p = r.p, st = projStats(p), sp = projSpan(p);
         doc.setFillColor(...hexRgb(p.color)); doc.circle(M + 9, cy, 3.2, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(fs + 0.5); doc.setTextColor(...PC.fg);
-        const pctTxt = `${st.pct}%`;
-        doc.text(pdfFit(doc, p.name + (ui.collapsed.has(p.id) ? ` (${st.total} tasks)` : ''), labW - 52), M + 17, cy, { baseline: 'middle' });
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(fs - 0.5); doc.setTextColor(...PC.muted);
-        doc.text(pctTxt, x0 - 6, cy, { align: 'right', baseline: 'middle' });
+        doc.text(pdfFit(doc, p.name + (ui.collapsed.has(p.id) ? ` (${st.total} tasks)` : ''), labW - 24), M + 17, cy, { baseline: 'middle' });
+        doc.setFont('helvetica', 'normal');
         if (sp) {
           const a = X(sp.s), z = X(sp.e) + dw, [c1, c2] = clampX(a, z), h = Math.max(4, rowH * 0.3);
           if (c2 > c1) {
             doc.setFillColor(...(sp.derived ? tint(p.color, 0.45) : hexRgb(p.color))); doc.rect(c1, cy - h / 2, c2 - c1, h, 'F');
-            const pz = Math.min(c2, a + (z - a) * st.pct / 100);
-            if (pz > c1) { doc.setFillColor(...shade(p.color, 0.35)); doc.rect(c1, cy - h / 2, pz - c1, h, 'F'); }
           }
         }
       } else if (r.type === 'group') {
@@ -1700,8 +1694,6 @@ async function exportGanttPdf(o) {
           if (c2 <= c1) return;
           doc.setLineWidth(0.6); doc.setDrawColor(...(late ? PC.danger : hexRgb(col))); doc.setFillColor(...tint(col, 0.78));
           doc.roundedRect(c1, cy - h / 2, c2 - c1, h, 2, 2, 'FD');
-          const pz = Math.min(c2, a + (z - a) * progressOf(t) / 100);
-          if (pz > c1 + 1) { doc.setFillColor(...tint(col, 0.35)); doc.roundedRect(c1 + 0.3, cy - h / 2 + 0.3, pz - c1 - 0.6, h - 0.6, 1.8, 1.8, 'F'); }
           const n = daysBetween(sp.s, sp.e) + 1;
           doc.setFontSize(6.5); doc.setTextColor(...PC.fg);
           if (c2 - c1 > 20) doc.text(`${n}d`, c1 + 4, cy, { baseline: 'middle' });
@@ -1753,7 +1745,7 @@ async function exportGanttPdf(o) {
       let lx = M; const ly = Math.min(H - M - 6, chartBottom + 18);
       doc.setFontSize(7.5); doc.setTextColor(...PC.muted); doc.setLineWidth(0.6);
       const item = (draw, label) => { draw(lx, ly); lx += 22; doc.text(label, lx, ly, { baseline: 'middle' }); lx += doc.getTextWidth(label) + 16; };
-      item((x, y) => { doc.setDrawColor(...PC.muted); doc.setFillColor(...tint('#607072', 0.78)); doc.roundedRect(x, y - 4, 16, 8, 1.5, 1.5, 'FD'); doc.setFillColor(...tint('#607072', 0.35)); doc.rect(x + 0.4, y - 3.6, 7, 7.2, 'F'); }, 'Task (dark part = progress)');
+      item((x, y) => { doc.setDrawColor(...PC.muted); doc.setFillColor(...tint('#607072', 0.78)); doc.roundedRect(x, y - 4, 16, 8, 1.5, 1.5, 'FD'); }, 'Task');
       item((x, y) => { doc.setDrawColor(...PC.muted); doc.setFillColor(...PC.white); doc.lines([[4, 4], [-4, 4], [-4, -4]], x + 8, y - 4, [1, 1], 'FD', true); }, 'Milestone');
       item((x, y) => { doc.setDrawColor(...PC.muted); doc.setFillColor(...PC.white); doc.rect(x + 4, y - 3.5, 7, 7, 'FD'); }, 'Status (filled = done)');
       if (o.arrows) {
