@@ -247,7 +247,7 @@ main { min-width: 0; padding: 26px 28px 40px; }
 
 /* ---------- gantt ---------- */
 .gt-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
-.gt { --lab: 230px; position: relative; }
+.gt { --lab: 252px; position: relative; }
 .gt-row { display: grid; grid-template-columns: var(--lab) var(--w); height: 40px; border-top: 1px solid var(--line); }
 .gt-row.head { height: 44px; border-top: 0; }
 .gt-row.proj, .gt-row.group { background: color-mix(in srgb, var(--surface-2) 55%, var(--surface)); }
@@ -264,6 +264,16 @@ main { min-width: 0; padding: 26px 28px 40px; }
 .gt-lab .tog:hover, .gt-lab .addsm:hover { background: var(--surface-2); color: var(--fg); }
 .gt-lab .addsm { border: 0; background: none; color: var(--muted); font-size: 0.75rem; font-weight: 600; padding: 3px 6px; border-radius: calc(4px * var(--rs)); flex: none; }
 .gt-lab .check { flex: none; margin: 0; }
+.grip { flex: none; width: 20px; height: 26px; margin-left: -4px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 1rem; line-height: 1; cursor: grab; touch-action: none; border-radius: calc(4px * var(--rs)); }
+.grip:hover, .grip:focus-visible { color: var(--fg); background: var(--surface-2); }
+.gt-row.lifting { opacity: .35; }
+@media (hover: hover) and (min-width: 861px) {
+  .gt-row.proj .addsm, .gt-row.group .addsm { position: absolute; right: 8px; opacity: 0; background-color: color-mix(in srgb, var(--surface-2) 55%, var(--surface)); }
+  .gt-row:hover .addsm, .gt-lab:focus-within .addsm { opacity: 1; }
+}
+.gt-drop { position: absolute; left: 0; right: 0; height: 3px; margin-top: -1.5px; background: var(--accent); z-index: 6; pointer-events: none; border-radius: 2px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.gt-ghost { position: fixed; z-index: 60; pointer-events: none; display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 7px 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--accent); border-radius: var(--r); box-shadow: var(--shadow); font-weight: 700; font-size: .875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transform: translate(14px, -50%); }
+body.reordering, body.reordering * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
 .gt-track { position: relative; overflow: hidden;
   background-image: linear-gradient(to right, var(--line) 1px, transparent 1px), linear-gradient(to right, transparent calc(var(--dw) * 5), color-mix(in srgb, var(--surface-2) 70%, transparent) calc(var(--dw) * 5));
   background-size: calc(var(--dw) * 7) 100%; }
@@ -454,8 +464,10 @@ form.f { display: grid; gap: 12px; }
     width: 56px; height: 56px; border-radius: calc(16px * var(--rs)); border: 0; background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow);
   }
   .board { grid-template-columns: minmax(0, 1fr); }
-  .gt { --lab: 140px; }
+  .gt { --lab: 176px; }
+  .gt-row.proj .addsm, .gt-row.group .addsm { display: none; }
   .gt-lab .addsm .wd { display: none; }
+  .gt-row.proj .gt-lab .pdot { display: none; }
   .gt-select { flex: 1 1 100%; max-width: none; }
   .gt-row.task .gt-lab { padding-left: 12px; }
   .toast { bottom: calc(var(--tab-h) + 20px + env(safe-area-inset-bottom, 0px)); }
@@ -711,7 +723,7 @@ function normalize(raw) {
     deleted,
     projects: (Array.isArray(s.projects) ? s.projects : []).filter(p => p && p.name).map(p => ({
       id: str(p.id) || uid(), name: str(p.name), color: isHex(p.color) ? p.color.toLowerCase() : COLORS[0],
-      start: date(p.start), due: date(p.due), notes: str(p.notes), area: area(p.area), updated: num(p.updated),
+      start: date(p.start), due: date(p.due), notes: str(p.notes), area: area(p.area), order: typeof p.order === 'number' && isFinite(p.order) ? p.order : null, updated: num(p.updated),
     })),
     tasks: (Array.isArray(s.tasks) ? s.tasks : []).filter(t => t && t.title).map(t => ({
       id: str(t.id) || uid(), title: str(t.title), projectId: str(t.projectId),
@@ -1351,10 +1363,26 @@ function fitGantt() {
   ui.zoom = len <= 28 ? 'day' : len <= 80 ? 'week' : 'month';
   ui.tlStart = ymd(addDays(mondayOf(parse(b.min)), ui.zoom === 'month' ? -14 : -7));
 }
+const byProjectOrder = (a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || (projSpan(a)?.s || '9999').localeCompare(projSpan(b)?.s || '9999');
+// Move a project before or after another one. Every project gets a fresh position so the order is
+// stable across devices; tasks are listed under their project, so they follow automatically.
+function moveProject(id, targetId, after) {
+  const list = db.projects.slice().sort(byProjectOrder);
+  const from = list.findIndex(p => p.id === id);
+  if (from < 0 || id === targetId) return false;
+  const [p] = list.splice(from, 1);
+  let to = list.findIndex(x => x.id === targetId);
+  if (to < 0) return false;
+  if (after) to++;
+  list.splice(to, 0, p);
+  const changed = list.some((x, i) => x.order !== i);
+  list.forEach((x, i) => { x.order = i; });
+  return changed;
+}
 function ganttRows(sel) {
   const rows = [];
   V.projects().filter(p => sel === 'all' || p.id === sel)
-    .sort((a, b) => (projSpan(a)?.s || '9999').localeCompare(projSpan(b)?.s || '9999'))
+    .sort(byProjectOrder)
     .forEach(p => { rows.push({ type: 'proj', p }); if (!ui.collapsed.has(p.id)) tasksOf(p.id).forEach(t => rows.push({ type: 'task', t })); });
   if (sel === 'all' || sel === 'none') {
     const loose = tasksOf('');
@@ -1381,6 +1409,7 @@ function renderGantt() {
   }
 
   const rows = ganttRows(sel);
+  const canReorder = rows.filter(r => r.type === 'proj').length > 1;
 
   const rowIndex = {};
   const html = rows.map((r, i) => {
@@ -1394,6 +1423,7 @@ function renderGantt() {
           : `<div class="gbar summary" role="button" tabindex="0" data-kind="project" data-id="${p.id}" style="--c:${p.color};left:${left}px;width:${w}px" title="${esc(p.name)}: ${shortDate(sp.s)} → ${shortDate(sp.e)} · ${st.pct}% done" aria-label="${esc(p.name)}, ${shortDate(sp.s)} to ${shortDate(sp.e)}"><span class="prog" style="width:${st.pct}%"></span><span class="h l"></span><span class="h r"></span></div>`;
       }
       return `<div class="gt-row proj"><div class="gt-lab">
+          ${canReorder ? `<button class="grip" data-grip="${p.id}" title="Drag to reorder" aria-label="Reorder ${esc(p.name)}. Drag, or use the up and down arrow keys.">⠿</button>` : ''}
           <button class="tog" data-act="gt-toggle" data-id="${p.id}" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} ${esc(p.name)}">${open ? '▾' : '▸'}</button>
           <span class="pdot" style="--c:${p.color}"></span><button class="t" data-act="edit-project" data-id="${p.id}">${esc(p.name)}</button>
           <button class="addsm" data-act="new-task" data-project="${p.id}" aria-label="Add task to ${esc(p.name)}">+<span class="wd"> Task</span></button></div>
@@ -1475,7 +1505,7 @@ function renderGantt() {
       <span><i class="dia" style="--c:var(--muted)"></i>Milestone (task with only a due date)</span>
       <span><svg width="26" height="10" aria-hidden="true"><path d="M1 5H20" style="stroke:var(--muted);stroke-width:1.5"/><path d="M19 1L25 5L19 9z" style="fill:var(--muted)"/></svg>Starts after</span>
       <span><svg width="26" height="10" aria-hidden="true"><path d="M1 5H20" style="stroke:var(--danger);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M19 1L25 5L19 9z" style="fill:var(--danger)"/></svg>Conflict</span>
-      <span class="tip">Drag a bar to move it, or drag its ends to change the start or due date. Moving a project bar moves all its tasks. With the keyboard, focus a bar and use ← → (hold Shift to change the due date).</span>
+      <span class="tip">Drag a bar to move it, or drag its ends to change the start or due date. Moving a project bar moves all its tasks. Drag ⠿ to reorder projects; their tasks move with them. With the keyboard, focus a bar and use ← → (hold Shift to change the due date).</span>
     </div>`;
 }
 
@@ -2229,6 +2259,79 @@ main.addEventListener('drop', ev => {
   const o = db.tasks.find(x => x.id === ev.dataTransfer.getData('text/plain'));
   if (o && o.status !== col.dataset.status) { o.status = col.dataset.status; save(); }
   render();
+});
+
+/* gantt: drag projects up and down to reorder them */
+let reorder = null;
+function projectBlocks(gt) {
+  return [...gt.querySelectorAll('.gt-row.proj')].map(row => {
+    let last = row;
+    while (last.nextElementSibling && last.nextElementSibling.matches('.gt-row.task')) last = last.nextElementSibling;
+    return { id: row.querySelector('[data-grip]')?.dataset.grip, row, last, top: row.offsetTop, bottom: last.offsetTop + last.offsetHeight };
+  }).filter(b => b.id);
+}
+function reorderSlot(ev) {
+  const r = reorder, y = ev.clientY - r.gt.getBoundingClientRect().top;
+  const blocks = projectBlocks(r.gt);
+  let k = blocks.findIndex(b => y < (b.top + b.bottom) / 2);
+  if (k < 0) k = blocks.length;
+  return { k, blocks };
+}
+main.addEventListener('pointerdown', ev => {
+  const grip = ev.target.closest('[data-grip]');
+  if (!grip || ev.button > 0) return;
+  ev.preventDefault(); ev.stopPropagation();
+  reorder = { id: grip.dataset.grip, gt: grip.closest('.gt'), x0: ev.clientX, y0: ev.clientY, started: false, pid: ev.pointerId, grip };
+  try { grip.setPointerCapture(ev.pointerId); } catch (e) {}
+}, true);
+main.addEventListener('pointermove', ev => {
+  const r = reorder;
+  if (!r || ev.pointerId !== r.pid) return;
+  if (!r.started) {
+    if (Math.hypot(ev.clientX - r.x0, ev.clientY - r.y0) < 5) return;
+    r.started = true;
+    document.body.classList.add('reordering');
+    const block = projectBlocks(r.gt).find(b => b.id === r.id);
+    for (let el = block.row; el; el = el === block.last ? null : el.nextElementSibling) el.classList.add('lifting');
+    r.ghost = document.createElement('div'); r.ghost.className = 'gt-ghost';
+    r.ghost.innerHTML = `<span class="pdot" style="--c:${proj(r.id).color}"></span>${esc(proj(r.id).name)}`;
+    document.body.appendChild(r.ghost);
+    r.line = document.createElement('div'); r.line.className = 'gt-drop'; r.gt.appendChild(r.line);
+  }
+  r.ghost.style.left = `${ev.clientX}px`; r.ghost.style.top = `${ev.clientY}px`;
+  const { k, blocks } = reorderSlot(ev);
+  r.line.style.top = `${k < blocks.length ? blocks[k].top : blocks[blocks.length - 1].bottom}px`;
+  r.slot = { k, blocks };
+  // keep the page scrolling while dragging near the top or bottom edge
+  if (ev.clientY < 70) window.scrollBy(0, -14); else if (ev.clientY > window.innerHeight - 90) window.scrollBy(0, 14);
+});
+function endReorder(ev, cancelled) {
+  const r = reorder;
+  if (!r || ev.pointerId !== r.pid) return;
+  reorder = null;
+  document.body.classList.remove('reordering');
+  r.ghost?.remove(); r.line?.remove();
+  if (!r.started) return;
+  r.gt.querySelectorAll('.lifting').forEach(el => el.classList.remove('lifting'));
+  if (cancelled || !r.slot) return;
+  const { k, blocks } = r.slot;
+  const moved = k < blocks.length ? moveProject(r.id, blocks[k].id, false) : moveProject(r.id, blocks[blocks.length - 1].id, true);
+  if (moved) { save(); render(); main.querySelector(`[data-grip="${r.id}"]`)?.focus({ preventScroll: true }); toast(`Moved ${proj(r.id).name}`); }
+}
+main.addEventListener('pointerup', ev => endReorder(ev, false));
+main.addEventListener('pointercancel', ev => endReorder(ev, true));
+main.addEventListener('keydown', ev => {
+  const grip = ev.target.closest?.('[data-grip]');
+  if (!grip || (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown')) return;
+  ev.preventDefault();
+  const ids = [...main.querySelectorAll('[data-grip]')].map(g => g.dataset.grip), i = ids.indexOf(grip.dataset.grip);
+  const j = ev.key === 'ArrowUp' ? i - 1 : i + 1;
+  if (j < 0 || j >= ids.length) return;
+  if (moveProject(ids[i], ids[j], ev.key === 'ArrowDown')) {
+    save(); render();
+    const g = main.querySelector(`[data-grip="${ids[i]}"]`); g?.focus({ preventScroll: true });
+    toast(`${proj(ids[i]).name} moved ${ev.key === 'ArrowUp' ? 'up' : 'down'}`);
+  }
 });
 
 /* gantt: drag bars to reschedule */
